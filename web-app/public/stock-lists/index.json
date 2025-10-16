@@ -1,0 +1,60 @@
+[
+  {
+    "id": "all",
+    "name": "全部股票清單",
+    "file": "全部股票_股票列表.csv",
+    "description": "全市場股票代碼對照"
+  },
+  {
+    "id": "hs_a",
+    "name": "滬深A股股票清單",
+    "file": "沪深A股_股票列表.csv",
+    "description": "滬深 A 股完整成分"
+  },
+  {
+    "id": "sz_a",
+    "name": "深證A股股票清單",
+    "file": "深证A股_股票列表.csv"
+  },
+  {
+    "id": "sh_a",
+    "name": "上證A股股票清單",
+    "file": "上证A股_股票列表.csv"
+  },
+  {
+    "id": "csi300",
+    "name": "滬深300成分股",
+    "file": "沪深300成分股_股票列表.csv"
+  },
+  {
+    "id": "sse50",
+    "name": "上證50成分股",
+    "file": "上证50成分股_股票列表.csv"
+  },
+  {
+    "id": "csi500",
+    "name": "中證500成分股",
+    "file": "中证500成分股_股票列表.csv"
+  },
+  {
+    "id": "chinext",
+    "name": "創業板股票清單",
+    "file": "创业板_股票列表.csv"
+  },
+  {
+    "id": "science-tech",
+    "name": "科創板股票清單",
+    "file": "科创板_股票列表.csv"
+  },
+  {
+    "id": "index",
+    "name": "主要指數清單",
+    "file": "指数_股票列表.csv"
+  },
+  {
+    "id": "watchlist",
+    "name": "自選清單樣板",
+    "file": "otheridx.csv",
+    "description": "可供編輯的自選股樣板"
+  }
+]
