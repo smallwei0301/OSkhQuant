@@ -1,0 +1,1 @@
+export const BUILD_VERSION = 'LBK-WEB-20240523-01';

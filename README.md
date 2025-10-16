@@ -14,6 +14,8 @@
 
 🔗 **获取方式**：请访问[看海量化官方网站](https://khsci.com/khQuant/)下载最新的安装包。
 
+> 📢 **2024年 Netlify 雲端版本更新**：若您偏好透过瀏覽器使用回测工具，我们新增了位於 `web/` 資料夾的前端專案，可一鍵部署到 Netlify。請參閱[「Netlify 部署指南」](#netlify-部署指南)章節快速上線。
+
 ---
 
 # 第一章：引言：为什么选择看海量化
@@ -2207,3 +2209,23 @@ names_dict = get_stock_names(['000001.SZ', '600519.SH'], stock_list_path)
 # 返回: {'000001.SZ': '平安银行', '600519.SH': '贵州茅台'}
 print(names_dict)
 ```
+
+## Netlify 部署指南
+
+> 適用對象：希望以瀏覽器進行 Lazybacktest 操作、部署於 Netlify 雲端的使用者。
+
+1. **準備環境**
+   - 本專案為純靜態網站，無需安裝 Node.js 或額外打包流程。
+   - 若需本地測試，只需以任何支援 ES Module 的靜態伺服器（例如 `python -m http.server`）於 `web/` 目錄啟動即可。
+2. **本地驗證**
+   - 在專案根目錄執行 `cd web` 後，以 `python -m http.server 4173`（或您慣用的伺服器）啟動服務。
+   - 於瀏覽器開啟 `http://localhost:4173`，上傳 CSV 後確認回測與圖表功能運作正常。
+3. **Netlify 一鍵部署**
+   - 於 Netlify 後台選擇 **Add new site → Import an existing project**。
+   - 選擇本 Git 儲存庫後，Netlify 會讀取 `netlify.toml`，並直接將 `web/` 目錄發佈為網站根目錄，無需額外建置指令。
+   - 部署完成後即可透過瀏覽器操作雲端回測中心。
+4. **操作建議**
+   - CSV 檔案需包含 `time, open, high, low, close, volume` 欄位，時間建議為台北時區（UTC+8）。
+   - 回測結果與交易紀錄僅儲存於使用者瀏覽器端，不會上傳至伺服器，符合資安及個資政策。
+
+若您需要自訂策略或增補指標，可直接擴充 `web/scripts/strategies.js` 與 `web/scripts/indicators.js`，修改後重新部署即可。
