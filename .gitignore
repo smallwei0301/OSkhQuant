@@ -260,6 +260,3 @@ docs/_build/
 doc/_build/ 
 __pycache__/
 app.log
-# Web 應用相關
-web-app/node_modules/
-web-app/dist/
