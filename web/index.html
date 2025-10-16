@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lazybacktest 雲端回測中心</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/lazybacktest.svg" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="header">
+        <div class="header__brand">
+          <img src="./assets/lazybacktest.svg" alt="Lazybacktest" class="header__logo" />
+          <div>
+            <h1>Lazybacktest 雲端回測中心</h1>
+            <p>專為台灣股市打造的即時策略模擬平台</p>
+          </div>
+        </div>
+        <div class="header__status" id="dataset-status">
+          <span class="header__status-title">尚未載入資料</span>
+          <span class="header__status-value">請上傳 CSV</span>
+        </div>
+        <button class="header__reset" id="reset-button" type="button">重新開始</button>
+      </header>
+      <main class="main">
+        <section class="panel">
+          <h2>1. 匯入行情資料</h2>
+          <p>支援 CSV (time, open, high, low, close, volume)。時間建議使用台北時區 (UTC+8)。</p>
+          <div class="panel__actions">
+            <input type="file" id="file-input" accept=".csv" hidden />
+            <button class="btn btn-primary" id="select-file" type="button">選擇 CSV 檔案</button>
+            <a class="panel__link" href="https://lazybacktest-public.s3.ap-northeast-1.amazonaws.com/sample/kgi_2330_sample.csv" target="_blank" rel="noreferrer">
+              下載示範檔
+            </a>
+          </div>
+          <div class="feedback" id="uploader-feedback" hidden></div>
+        </section>
+        <section class="panel" id="strategy-panel">
+          <h2>2. 選擇策略模板</h2>
+          <div class="strategy-list" id="strategy-list"></div>
+        </section>
+        <section class="panel" id="tuner-panel">
+          <h2>3. 參數調校與資金設定</h2>
+          <div class="tuner" id="parameter-controls"></div>
+          <div class="tuner-config">
+            <label>
+              <span>初始資金 (TWD)</span>
+              <input type="number" id="initial-capital" value="1000000" min="10000" step="1000" />
+            </label>
+            <label>
+              <span>單邊手續費率</span>
+              <input type="number" id="fee-rate" value="0.0005" min="0" max="0.01" step="0.0001" />
+            </label>
+            <button class="btn btn-accent" id="run-backtest" type="button">開始回測</button>
+          </div>
+        </section>
+        <section class="panel" id="feedback-panel" hidden></section>
+        <section class="panel" id="metrics-panel" hidden>
+          <h2>4. 效能概覽</h2>
+          <div class="metrics" id="metrics-grid"></div>
+        </section>
+        <section class="panel" id="chart-panel" hidden>
+          <h2>資產淨值走勢</h2>
+          <canvas id="equity-chart" height="320"></canvas>
+        </section>
+        <section class="panel" id="trades-panel" hidden>
+          <div class="panel__header">
+            <h2>交易紀錄</h2>
+            <span id="trade-count"></span>
+          </div>
+          <div class="table-wrapper">
+            <table id="trades-table">
+              <thead>
+                <tr>
+                  <th>時間</th>
+                  <th>方向</th>
+                  <th>價格</th>
+                  <th>數量</th>
+                  <th>備註</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+      <footer class="footer">
+        Lazybacktest 2024 · Netlify Ready 版本 · <span id="build-version"></span>
+      </footer>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" integrity="sha256-2pCQSCq7c/oyXcpW8oUi2zqo0Cqs5niAEvLuDBvZS7w=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" integrity="sha256-GGSQtL9zJxsgjunxzWQOabhE0G6vO8md9cls6ZpXN9U=" crossorigin="anonymous"></script>
+    <script type="module" src="./scripts/app.js"></script>
+  </body>
+</html>
