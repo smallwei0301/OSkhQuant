@@ -207,6 +207,26 @@ a {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.inline-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: rgba(15, 23, 42, 0.35);
+  border-radius: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 0.65rem 0.85rem;
+}
+
+.inline-controls span {
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 0.9rem;
+}
+
+.inline-controls .link-button {
+  flex-shrink: 0;
+}
+
 .input-group input:focus,
 .input-group select:focus,
 .input-group textarea:focus {
@@ -336,6 +356,18 @@ tbody td {
 
 .link-button.danger {
   color: #f87171;
+}
+
+.empty-state,
+.loading-state {
+  padding: 1rem;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.9rem;
+}
+
+.loading-state {
+  color: #38bdf8;
 }
 
 .status-banner {

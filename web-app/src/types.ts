@@ -145,18 +145,14 @@ export interface BacktestDiagnostics {
   averageLoss: number;
 }
 
-export interface StockListMeta {
-  id: string;
-  name: string;
-  file: string;
-  description?: string;
-  count?: number;
-}
-
 export interface StockListItem {
   code: string;
   name: string;
   exchange?: string;
+  industry?: string;
+  listingDate?: string;
+  isin?: string;
+  status?: string;
 }
 
 export interface RiskAlert {

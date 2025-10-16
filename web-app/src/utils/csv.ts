@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import type { ParsedPriceSeries, PriceRecord, StockListItem } from '../types';
+import type { ParsedPriceSeries, PriceRecord } from '../types';
 
 const DATE_HEADERS = ['date', 'datetime', 'time', '日期', '时间'];
 const OPEN_HEADERS = ['open', '开盘', 'open_price'];
@@ -197,39 +197,4 @@ export async function parsePriceCsv(file: File): Promise<ParsedPriceSeries[]> {
   });
 }
 
-export async function parseStockListCsv(fileUrl: string): Promise<StockListItem[]> {
-  const response = await fetch(fileUrl);
-  if (!response.ok) {
-    throw new Error(`無法載入股票清單：${response.statusText}`);
-  }
-  const csvText = await response.text();
-  return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, string>>(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          reject(new Error(results.errors.map((e) => e.message).join('\n')));
-          return;
-        }
-        const items: StockListItem[] = results.data
-          .map((row) => {
-            const code = row['代码'] || row['code'] || row['股票代码'];
-            const name = row['名称'] || row['name'] || row['股票简称'];
-            const exchange = row['市场'] || row['exchange'];
-            if (!code || !name) {
-              return null;
-            }
-            return {
-              code: code.trim(),
-              name: name.trim(),
-              exchange: exchange?.trim()
-            };
-          })
-          .filter((item): item is StockListItem => Boolean(item));
-        resolve(items);
-      },
-      error: (error) => reject(error)
-    });
-  });
-}
+// parseStockListCsv 已移除，請改用台灣證交所 OpenAPI 取得上市公司清單。

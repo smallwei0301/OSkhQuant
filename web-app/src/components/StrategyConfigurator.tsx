@@ -95,7 +95,7 @@ export function StrategyConfigurator({
 
         <div className="content-grid compact">
           <div className="input-group">
-            <label htmlFor="initial-capital">初始資金 (人民幣)</label>
+            <label htmlFor="initial-capital">初始資金 (新台幣)</label>
             <input
               id="initial-capital"
               type="number"

@@ -19,7 +19,7 @@ import type {
 } from './types';
 import { runBacktest } from './utils/backtest';
 
-const BUILD_VERSION = 'LBK-NETLIFY-V2';
+const BUILD_VERSION = 'LBK-NETLIFY-V3';
 
 const DEFAULT_CONFIG: StrategyConfig = {
   versionCode: BUILD_VERSION,
