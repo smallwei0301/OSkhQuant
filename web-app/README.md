@@ -1,6 +1,6 @@
 # Lazybacktest 雲端回測中心
 
-版本代碼：**LBK-NETLIFY-V9**
+版本代碼：**LBK-NETLIFY-V10**
 
 此資料夾為 Lazybacktest 的全功能瀏覽器版本，可直接部署至 Netlify。功能特色：
 
@@ -46,9 +46,9 @@ npm run build
 
 1. 於 Netlify 新增站台時選擇「Deploy with Git」。
 2. 指定此儲存庫，Netlify 會讀取根目錄的 `netlify.toml`。
-3. 建置命令：`npm run build`
+3. 建置命令：`cd web-app && npm run build`
 4. 發佈目錄：`web-app/dist`
-5. 部署完成後即可透過網頁操作桌面版 KHQuant 的完整功能。
+5. 部署完成後即可透過網頁操作桌面版 KHQuant 的完整功能；部署完成後請透過 `/.netlify/functions/twse-daily` 與 `/.netlify/functions/twse-companies` 驗證函式可達性，避免發生 404。
 
 > 若需使用自訂網域，請於 Netlify 後台設定 CNAME，並確認 TLS 憑證。
 
