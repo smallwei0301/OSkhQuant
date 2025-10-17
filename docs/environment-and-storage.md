@@ -13,6 +13,7 @@
   - `NEXT_PUBLIC_API_BASE_URL`：前端公開 API 位址，通常為 `/.netlify/functions/api`。
   - `NEXT_PUBLIC_APP_ENV`：顯示於 UI 的環境標籤，如 `production`、`staging`。
 - 建議以 Netlify Deploy Context (production / preview / deploy-preview) 區分不同值。
+- `netlify.toml` 裡透過 `PIP_REQUIREMENTS = "api/requirements.txt"` 及 `PYTHON_VERSION = "3.10"` 指定建置環境，避免 `xtquant` 類桌面依賴於雲端安裝失敗。
 
 ### 檔案管理
 - `web/.env.example` 提供開發者參考，勿直接存放密鑰。
@@ -40,7 +41,7 @@
 ## 5. 部署流程建議
 1. 開發者於本地以 `pnpm dev` 與 `uvicorn app.main:app` 同步測試。
 2. Commit 後透過 GitHub Actions 進行 Lint / 單元測試 (未連網即可執行)。
-3. Netlify 於 build 時以 `netlify/functions` 建立 Python Function，載入 `api/netlify_handler.py`。
+3. Netlify 於 build 時以 `netlify/functions/api.py` 作為入口，並根據 `included_files` 將 `api/**` 與共用模組打包進 Function。
 4. 前端透過 `NEXT_PUBLIC_API_BASE_URL` 指向 `/.netlify/functions/api`，跨網域問題由 Netlify 代理解決。
 
 > 提醒：遵循 Least Privilege 原則，僅於需要時載入 xtquant，並透過 Feature Flag 控制。

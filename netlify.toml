@@ -1,0 +1,17 @@
+[build]
+  command = "cd web && npm install && npm run build"
+  publish = "web/.next"
+  functions = "netlify/functions"
+
+[build.environment]
+  PIP_REQUIREMENTS = "api/requirements.txt"
+  PYTHON_VERSION = "3.10"
+
+[functions]
+  directory = "netlify/functions"
+
+[functions."api"]
+  included_files = ["api/**", "models/**", "services/**"]
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

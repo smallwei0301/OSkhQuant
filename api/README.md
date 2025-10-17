@@ -18,16 +18,28 @@ uvicorn app.main:app --reload --port 8000
 
 ## Netlify Functions 部署
 
-- 於根目錄新增 `netlify/functions/api.py`，載入此 FastAPI app (範例已於 `api/netlify_handler.py`).
-- 在 `netlify.toml` 設定：
+- 專案已預先提供 `netlify/functions/api.py`，直接引入 `api/netlify_handler.py` 中的 `handler`。
+- `netlify.toml` 範例：
 
 ```toml
-[functions]
-python_runtime = "3.11"
-external_node_modules = []
+[build]
+  command = "cd web && npm install && npm run build"
+  publish = "web/.next"
+  functions = "netlify/functions"
+
+[build.environment]
+  PIP_REQUIREMENTS = "api/requirements.txt"
+  PYTHON_VERSION = "3.10"
+
+[functions."api"]
+  included_files = ["api/**", "models/**", "services/**"]
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 ```
 
-- 使用 `pip install -r requirements.txt` 或 `pip install .` 安裝依賴。
+- Netlify 會依照 `PIP_REQUIREMENTS` 僅安裝 `api/requirements.txt`，避免 Desktop 版依賴 (如 `xtquant`) 阻礙佈署。
+- 本地或 CI 可使用 `pip install -r api/requirements.txt` 安裝 FastAPI 相關依賴。
 
 ## 環境變數
 
