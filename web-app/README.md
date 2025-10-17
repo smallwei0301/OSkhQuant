@@ -1,6 +1,6 @@
 # Lazybacktest 雲端回測中心
 
-版本代碼：**LBK-NETLIFY-V4**
+版本代碼：**LBK-NETLIFY-V5**
 
 此資料夾為 Lazybacktest 的全功能瀏覽器版本，可直接部署至 Netlify。功能特色：
 
@@ -17,10 +17,18 @@
 ```bash
 cd web-app
 npm install
-npm run dev
+npm run dev # 僅啟動前端（TWSE 功能需搭配 Netlify Functions）
 ```
 
 > 沙盒環境可能無法連線 npm registry；請於有網路的環境安裝依賴套件。
+
+若需與台灣證交所 Open API 互動，請安裝 [Netlify CLI](https://docs.netlify.com/cli/get-started/) 並於根目錄執行：
+
+```bash
+netlify dev
+```
+
+此指令會同時啟動 Vite 開發伺服器與 Netlify Functions Proxy，使 `/.netlify/functions/*` 端點在本地開發時可用。
 
 ## 單元測試
 

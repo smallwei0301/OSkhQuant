@@ -91,7 +91,7 @@ export function TwseDataFetcher({ companies, onLoaded }: TwseDataFetcherProps) {
     <div className="card">
       <h2>台灣證交所資料下載</h2>
       <p className="status-banner">
-        透過台灣證券交易所 Open API 即時抓取上市公司日線行情，資料會在瀏覽器端解析，不會上傳至伺服器。
+        透過 Netlify Functions 代理台灣證券交易所 Open API，即時下載上市公司日線行情，資料仍於瀏覽器端解析與存放。
       </p>
       <div className="content-grid compact">
         <div className="input-group">
