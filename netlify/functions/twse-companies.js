@@ -1,4 +1,5 @@
 const COMPANY_ENDPOINT = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L';
+const FUNCTION_USER_AGENT = 'Lazybacktest-Netlify/1.0';
 
 const BASE_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -36,9 +37,12 @@ exports.handler = async () => {
   try {
     const response = await fetch(COMPANY_ENDPOINT, {
       headers: {
-        Accept: 'application/json'
+        Accept: 'application/json, text/plain, */*',
+        'User-Agent': FUNCTION_USER_AGENT
       }
     });
+
+    const rawText = await response.text();
 
     if (!response.ok) {
       return {
@@ -50,7 +54,20 @@ exports.handler = async () => {
       };
     }
 
-    const payload = await response.json();
+    let payload;
+    try {
+      payload = JSON.parse(rawText);
+    } catch (error) {
+      console.error('TWSE company payload parse failed', rawText.slice(0, 200));
+      return {
+        statusCode: 502,
+        headers: BASE_HEADERS,
+        body: JSON.stringify({
+          error: '台灣證交所回傳格式異常，請稍後重試'
+        })
+      };
+    }
+
     if (!Array.isArray(payload)) {
       return {
         statusCode: 502,

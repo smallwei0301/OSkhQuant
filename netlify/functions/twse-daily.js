@@ -1,4 +1,5 @@
 const DAILY_ENDPOINT = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY';
+const FUNCTION_USER_AGENT = 'Lazybacktest-Netlify/1.0';
 
 const BASE_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -206,6 +207,21 @@ function mapRows(payload) {
   return [];
 }
 
+function buildMonthlyLabel(symbol, year, month) {
+  return `${symbol} ${year}-${String(month + 1).padStart(2, '0')}`;
+}
+
+function parseJsonPayload(rawText) {
+  if (!rawText) {
+    return null;
+  }
+  try {
+    return JSON.parse(rawText);
+  } catch (error) {
+    return null;
+  }
+}
+
 exports.handler = async (event) => {
   const params = event.queryStringParameters || {};
   const symbol = (params.symbol || '').trim();
@@ -256,37 +272,45 @@ exports.handler = async (event) => {
 
   for (const slot of monthSlots) {
     const dateParam = `${slot.year}${String(slot.month + 1).padStart(2, '0')}01`;
-    const url = `${DAILY_ENDPOINT}?date=${dateParam}&stockNo=${encodeURIComponent(symbol)}`;
+    const url = `${DAILY_ENDPOINT}?response=json&date=${dateParam}&stockNo=${encodeURIComponent(symbol)}`;
     let response;
     try {
       response = await fetch(url, {
         headers: {
-          Accept: 'application/json'
+          Accept: 'application/json, text/plain, */*',
+          'User-Agent': FUNCTION_USER_AGENT
         }
       });
     } catch (error) {
       console.error('TWSE daily fetch failed', symbol, dateParam, error);
-      return {
-        statusCode: 502,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({
-          error: `台灣證交所連線失敗，請稍後再試（${symbol} ${slot.year}-${String(slot.month + 1).padStart(2, '0')}）`
-        })
-      };
+      warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：連線失敗`);
+      continue;
+    }
+
+    let rawText;
+    try {
+      rawText = await response.text();
+    } catch (error) {
+      console.error('TWSE daily read failed', symbol, dateParam, error);
+      warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：資料讀取失敗`);
+      continue;
     }
 
     if (!response.ok) {
-      console.error('TWSE daily response not ok', symbol, dateParam, response.status);
-      return {
-        statusCode: response.status,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({
-          error: `無法取得 ${symbol} 的日線資料 (${slot.year}-${String(slot.month + 1).padStart(2, '0')})`
-        })
-      };
+      console.error('TWSE daily response not ok', symbol, dateParam, response.status, rawText);
+      warnings.push(
+        `${buildMonthlyLabel(symbol, slot.year, slot.month)}：HTTP ${response.status} ${response.statusText || ''}`.trim()
+      );
+      continue;
     }
 
-    const payload = await response.json();
+    const payload = parseJsonPayload(rawText);
+    if (!payload) {
+      console.error('TWSE daily payload parse failed', symbol, dateParam, rawText.slice(0, 200));
+      warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：台灣證交所回傳格式異常`);
+      continue;
+    }
+
     const rows = mapRows(payload);
     if (rows.length === 0) {
       const statMessage = typeof payload.stat === 'string' ? payload.stat : undefined;
@@ -316,7 +340,10 @@ exports.handler = async (event) => {
     return {
       statusCode: 404,
       headers: BASE_HEADERS,
-      body: JSON.stringify({ error: `無法取得 ${symbol} 在所選區間的交易資料` })
+      body: JSON.stringify({
+        error: `無法取得 ${symbol} 在所選區間的交易資料`,
+        warnings
+      })
     };
   }
 

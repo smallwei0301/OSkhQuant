@@ -73,11 +73,15 @@ export function TwseDataFetcher({ companies, onLoaded }: TwseDataFetcherProps) {
         selectedCompany?.name ? `${selectedCompany.code} ${selectedCompany.name}` : undefined
       );
       onLoaded([series]);
+      const warningSuffix =
+        Array.isArray(series.warnings) && series.warnings.length > 0
+          ? ` ⚠️ ${series.warnings.join('；')}`
+          : '';
       setState({
         status: 'success',
-        message: `已載入 ${series.symbol} ${series.records.length} 筆日線資料（${series.start.toISOString().slice(0, 10)}→${series.end
+        message: `已載入 ${series.symbol} ${series.records.length} 筆日線資料（${series.start
           .toISOString()
-          .slice(0, 10)}）`
+          .slice(0, 10)}→${series.end.toISOString().slice(0, 10)}）${warningSuffix}`
       });
     } catch (error) {
       setState({

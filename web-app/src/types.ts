@@ -17,6 +17,7 @@ export interface ParsedPriceSeries {
   sourceName: string;
   start: Date;
   end: Date;
+  warnings?: string[];
 }
 
 export interface UploadedDatasetSummary {

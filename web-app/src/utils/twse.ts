@@ -57,6 +57,11 @@ interface DailyResponse extends FunctionErrorPayload {
   records: DailyRecordPayload[];
 }
 
+interface DailySeriesResult {
+  records: PriceRecord[];
+  warnings: string[];
+}
+
 function resolveFunctionBase(): string {
   const override = import.meta.env?.VITE_NETLIFY_FUNCTION_BASE;
   if (override) {
@@ -93,10 +98,18 @@ async function invokeNetlifyFunction<T>(name: string, params?: Record<string, st
     throw new Error('台灣證交所服務連線失敗，請確認網路環境後再試');
   }
 
+  let rawText: string;
+  try {
+    rawText = await response.text();
+  } catch (error) {
+    throw new Error('台灣證交所服務回傳格式異常，請稍後再試');
+  }
+
   let payload: T | (FunctionErrorPayload & Record<string, unknown>);
   try {
-    payload = (await response.json()) as T | (FunctionErrorPayload & Record<string, unknown>);
+    payload = JSON.parse(rawText) as T | (FunctionErrorPayload & Record<string, unknown>);
   } catch (error) {
+    console.error(`Failed to parse Netlify function payload for ${name}`, rawText.slice(0, 200));
     throw new Error('台灣證交所服務回傳格式異常，請稍後再試');
   }
 
@@ -196,7 +209,7 @@ export async function fetchTwseDailySeries(
   symbol: string,
   start: Date,
   end: Date
-): Promise<PriceRecord[]> {
+): Promise<DailySeriesResult> {
   if (!symbol) {
     throw new Error('請輸入股票代碼');
   }
@@ -214,11 +227,11 @@ export async function fetchTwseDailySeries(
     throw new Error(`無法取得 ${symbol} 在所選區間的交易資料`);
   }
 
-  if (Array.isArray(payload.warnings) && payload.warnings.length > 0) {
-    console.warn('TWSE daily warnings:', payload.warnings);
-  }
+  const warnings = Array.isArray(payload.warnings)
+    ? payload.warnings.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
 
-  return payload.records.map((record) => ({
+  const records = payload.records.map((record) => ({
     symbol: record.symbol,
     timestamp: new Date(`${record.date}T00:00:00${TW_TZ_OFFSET}`),
     open: record.open,
@@ -227,6 +240,12 @@ export async function fetchTwseDailySeries(
     close: record.close,
     volume: record.volume
   } satisfies PriceRecord));
+
+  if (warnings.length > 0) {
+    console.warn('TWSE daily warnings:', warnings);
+  }
+
+  return { records, warnings };
 }
 
 export async function buildTwseSeries(
@@ -235,8 +254,8 @@ export async function buildTwseSeries(
   end: Date,
   sourceName?: string
 ): Promise<ParsedPriceSeries> {
-  const records = await fetchTwseDailySeries(symbol, start, end);
-  return {
+  const { records, warnings } = await fetchTwseDailySeries(symbol, start, end);
+  const series: ParsedPriceSeries = {
     symbol,
     records,
     frequency: 'daily',
@@ -244,4 +263,10 @@ export async function buildTwseSeries(
     start: records[0].timestamp,
     end: records[records.length - 1].timestamp
   } satisfies ParsedPriceSeries;
+
+  if (warnings.length > 0) {
+    series.warnings = warnings;
+  }
+
+  return series;
 }
