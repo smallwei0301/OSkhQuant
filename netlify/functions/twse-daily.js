@@ -303,157 +303,180 @@ function parseJsonPayload(rawText) {
 }
 
 exports.handler = async (event) => {
-  const params = event.queryStringParameters || {};
-  const symbol = (params.symbol || '').trim();
-  const startRaw = params.start;
-  const endRaw = params.end;
+  const context = {
+    symbol: '',
+    start: '',
+    end: ''
+  };
 
-  if (!symbol) {
-    return {
-      statusCode: 400,
-      headers: BASE_HEADERS,
-      body: JSON.stringify({ error: '請提供 symbol 參數' })
-    };
-  }
+  try {
+    const params = event.queryStringParameters || {};
+    context.symbol = (params.symbol || '').trim();
+    context.start = params.start || '';
+    context.end = params.end || '';
 
-  const startDate = parseDateInput(startRaw);
-  const endDate = parseDateInput(endRaw);
-  if (!startDate || !endDate) {
-    return {
-      statusCode: 400,
-      headers: BASE_HEADERS,
-      body: JSON.stringify({ error: '請提供合法的 start 與 end 日期（YYYY-MM-DD）' })
-    };
-  }
-  if (startDate > endDate) {
-    return {
-      statusCode: 400,
-      headers: BASE_HEADERS,
-      body: JSON.stringify({ error: 'start 必須早於 end' })
-    };
-  }
+    const { symbol } = context;
+    const startRaw = context.start;
+    const endRaw = context.end;
 
-  const startYear = startDate.getFullYear();
-  const startMonth = startDate.getMonth();
-  const endYear = endDate.getFullYear();
-  const endMonth = endDate.getMonth();
-
-  const monthSlots = [];
-  for (let year = startYear; year <= endYear; year += 1) {
-    const monthFrom = year === startYear ? startMonth : 0;
-    const monthTo = year === endYear ? endMonth : 11;
-    for (let month = monthFrom; month <= monthTo; month += 1) {
-      monthSlots.push({ year, month });
+    if (!symbol) {
+      return {
+        statusCode: 400,
+        headers: BASE_HEADERS,
+        body: JSON.stringify({ error: '請提供 symbol 參數' })
+      };
     }
-  }
 
-  const collected = [];
-  const warnings = [];
+    const startDate = parseDateInput(startRaw);
+    const endDate = parseDateInput(endRaw);
+    if (!startDate || !endDate) {
+      return {
+        statusCode: 400,
+        headers: BASE_HEADERS,
+        body: JSON.stringify({ error: '請提供合法的 start 與 end 日期（YYYY-MM-DD）' })
+      };
+    }
+    if (startDate > endDate) {
+      return {
+        statusCode: 400,
+        headers: BASE_HEADERS,
+        body: JSON.stringify({ error: 'start 必須早於 end' })
+      };
+    }
 
-  for (const slot of monthSlots) {
-    const dateParam = `${slot.year}${String(slot.month + 1).padStart(2, '0')}01`;
-    const url = `${DAILY_ENDPOINT}?response=json&date=${dateParam}&stockNo=${encodeURIComponent(symbol)}`;
-    let response;
-    try {
-      response = await fetch(url, {
-        headers: {
-          Accept: 'application/json, text/plain, */*',
-          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
-          'User-Agent': FUNCTION_USER_AGENT,
-          Referer: 'https://openapi.twse.com.tw/',
-          Origin: 'https://openapi.twse.com.tw'
+    const startYear = startDate.getFullYear();
+    const startMonth = startDate.getMonth();
+    const endYear = endDate.getFullYear();
+    const endMonth = endDate.getMonth();
+
+    const monthSlots = [];
+    for (let year = startYear; year <= endYear; year += 1) {
+      const monthFrom = year === startYear ? startMonth : 0;
+      const monthTo = year === endYear ? endMonth : 11;
+      for (let month = monthFrom; month <= monthTo; month += 1) {
+        monthSlots.push({ year, month });
+      }
+    }
+
+    const collected = [];
+    const warnings = [];
+
+    for (const slot of monthSlots) {
+      const dateParam = `${slot.year}${String(slot.month + 1).padStart(2, '0')}01`;
+      const url = `${DAILY_ENDPOINT}?response=json&date=${dateParam}&stockNo=${encodeURIComponent(symbol)}`;
+      let response;
+      try {
+        response = await fetch(url, {
+          headers: {
+            Accept: 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+            'User-Agent': FUNCTION_USER_AGENT,
+            Referer: 'https://openapi.twse.com.tw/',
+            Origin: 'https://openapi.twse.com.tw'
+          }
+        });
+      } catch (error) {
+        console.error('TWSE daily fetch failed', symbol, dateParam, error);
+        warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：連線失敗`);
+        continue;
+      }
+
+      let rawText;
+      try {
+        rawText = stripBom(await response.text());
+      } catch (error) {
+        console.error('TWSE daily read failed', symbol, dateParam, error);
+        warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：資料讀取失敗`);
+        continue;
+      }
+
+      if (!response.ok) {
+        console.error('TWSE daily response not ok', symbol, dateParam, response.status, rawText);
+        warnings.push(
+          `${buildMonthlyLabel(symbol, slot.year, slot.month)}：HTTP ${response.status} ${response.statusText || ''}`.trim()
+        );
+        continue;
+      }
+
+      const payload = parseJsonPayload(rawText);
+      let rows = [];
+      let statMessage;
+
+      if (payload) {
+        rows = mapRows(payload);
+        statMessage = typeof payload.stat === 'string' ? payload.stat : undefined;
+      } else {
+        const csvRows = parseCsvPayload(rawText);
+        if (csvRows) {
+          console.warn('TWSE daily fallback to CSV payload', symbol, dateParam);
+          rows = csvRows;
+        } else {
+          console.error('TWSE daily payload parse failed', symbol, dateParam, rawText.slice(0, 200));
+          warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：台灣證交所回傳格式異常`);
+          continue;
         }
-      });
-    } catch (error) {
-      console.error('TWSE daily fetch failed', symbol, dateParam, error);
-      warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：連線失敗`);
-      continue;
-    }
+      }
 
-    let rawText;
-    try {
-      rawText = stripBom(await response.text());
-    } catch (error) {
-      console.error('TWSE daily read failed', symbol, dateParam, error);
-      warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：資料讀取失敗`);
-      continue;
-    }
-
-    if (!response.ok) {
-      console.error('TWSE daily response not ok', symbol, dateParam, response.status, rawText);
-      warnings.push(
-        `${buildMonthlyLabel(symbol, slot.year, slot.month)}：HTTP ${response.status} ${response.statusText || ''}`.trim()
-      );
-      continue;
-    }
-
-    const payload = parseJsonPayload(rawText);
-    let rows = [];
-    let statMessage;
-
-    if (payload) {
-      rows = mapRows(payload);
-      statMessage = typeof payload.stat === 'string' ? payload.stat : undefined;
-    } else {
-      const csvRows = parseCsvPayload(rawText);
-      if (csvRows) {
-        console.warn('TWSE daily fallback to CSV payload', symbol, dateParam);
-        rows = csvRows;
-      } else {
-        console.error('TWSE daily payload parse failed', symbol, dateParam, rawText.slice(0, 200));
-        warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：台灣證交所回傳格式異常`);
+      if (rows.length === 0) {
+        if (statMessage && statMessage !== 'OK') {
+          warnings.push(`${symbol}：${statMessage}（${slot.year}-${String(slot.month + 1).padStart(2, '0')}）`);
+        } else {
+          const fallbackMessage = rawText.includes('查無資料')
+            ? '查無資料'
+            : '未提供有效資料';
+          warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：${fallbackMessage}`);
+        }
         continue;
       }
+
+      for (const row of rows) {
+        const record = parseDailyRow(row, symbol);
+        if (!record) {
+          continue;
+        }
+        if (record.date < formatDateKey(startDate) || record.date > formatDateKey(endDate)) {
+          continue;
+        }
+        collected.push(record);
+      }
     }
 
-    if (rows.length === 0) {
-      if (statMessage && statMessage !== 'OK') {
-        warnings.push(`${symbol}：${statMessage}（${slot.year}-${String(slot.month + 1).padStart(2, '0')}）`);
-      } else {
-        const fallbackMessage = rawText.includes('查無資料')
-          ? '查無資料'
-          : '未提供有效資料';
-        warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：${fallbackMessage}`);
-      }
-      continue;
+    const deduped = uniqueByDate(
+      collected.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    );
+
+    if (deduped.length === 0) {
+      return {
+        statusCode: 404,
+        headers: BASE_HEADERS,
+        body: JSON.stringify({
+          error: `無法取得 ${symbol} 在所選區間的交易資料`,
+          warnings
+        })
+      };
     }
 
-    for (const row of rows) {
-      const record = parseDailyRow(row, symbol);
-      if (!record) {
-        continue;
-      }
-      if (record.date < formatDateKey(startDate) || record.date > formatDateKey(endDate)) {
-        continue;
-      }
-      collected.push(record);
-    }
-  }
-
-  const deduped = uniqueByDate(
-    collected.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-  );
-
-  if (deduped.length === 0) {
     return {
-      statusCode: 404,
+      statusCode: 200,
       headers: BASE_HEADERS,
       body: JSON.stringify({
-        error: `無法取得 ${symbol} 在所選區間的交易資料`,
+        symbol,
+        start: formatDateKey(startDate),
+        end: formatDateKey(endDate),
+        records: deduped,
         warnings
       })
     };
+  } catch (error) {
+    const debugId = `twse-daily-${Date.now()}`;
+    console.error('TWSE daily unexpected error', debugId, context, error);
+    return {
+      statusCode: 502,
+      headers: BASE_HEADERS,
+      body: JSON.stringify({
+        error: '台灣證交所資料解析流程發生非預期錯誤，請稍後再試',
+        warnings: [`函式錯誤代碼：${debugId}`]
+      })
+    };
   }
-
-  return {
-    statusCode: 200,
-    headers: BASE_HEADERS,
-    body: JSON.stringify({
-      symbol,
-      start: formatDateKey(startDate),
-      end: formatDateKey(endDate),
-      records: deduped,
-      warnings
-    })
-  };
 };

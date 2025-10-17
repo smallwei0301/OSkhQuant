@@ -22,7 +22,7 @@ import type {
 import { runBacktest } from './utils/backtest';
 import { fetchTwseCompanies } from './utils/twse';
 
-const BUILD_VERSION = 'LBK-NETLIFY-V7';
+const BUILD_VERSION = 'LBK-NETLIFY-V8';
 
 const DEFAULT_CONFIG: StrategyConfig = {
   versionCode: BUILD_VERSION,

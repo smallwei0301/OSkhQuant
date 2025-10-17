@@ -128,11 +128,13 @@ exports.handler = async () => {
     const rawText = stripBom(await response.text());
 
     if (!response.ok) {
+      const debugId = `twse-companies-${Date.now()}`;
+      console.error('TWSE company response not ok', debugId, response.status, rawText);
       return {
         statusCode: response.status,
         headers: BASE_HEADERS,
         body: JSON.stringify({
-          error: '台灣證交所公司名錄服務暫時無法使用，請稍後再試'
+          error: `台灣證交所公司名錄服務暫時無法使用，請稍後再試（錯誤代碼：${debugId}）`
         })
       };
     }
@@ -155,12 +157,13 @@ exports.handler = async () => {
         console.warn('TWSE company fallback to CSV payload');
         dataset = csvRows;
       } else {
-        console.error('TWSE company payload parse failed', rawText.slice(0, 200));
+        const debugId = `twse-companies-${Date.now()}`;
+        console.error('TWSE company payload parse failed', debugId, rawText.slice(0, 200));
         return {
           statusCode: 502,
           headers: BASE_HEADERS,
           body: JSON.stringify({
-            error: '台灣證交所回傳格式異常，請稍後重試'
+            error: `台灣證交所回傳格式異常，請稍後重試（錯誤代碼：${debugId}）`
           })
         };
       }
@@ -180,12 +183,13 @@ exports.handler = async () => {
       })
     };
   } catch (error) {
-    console.error('TWSE company list fetch failed', error);
+    const debugId = `twse-companies-${Date.now()}`;
+    console.error('TWSE company list fetch failed', debugId, error);
     return {
       statusCode: 502,
       headers: BASE_HEADERS,
       body: JSON.stringify({
-        error: '台灣證交所公司名錄連線失敗，請稍後再試'
+        error: `台灣證交所公司名錄連線失敗，請稍後再試（錯誤代碼：${debugId}）`
       })
     };
   }

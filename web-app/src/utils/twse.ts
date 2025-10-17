@@ -2,6 +2,10 @@ import type { ParsedPriceSeries, PriceRecord, TwseCompany } from '../types';
 
 const TW_TZ_OFFSET = '+08:00';
 
+function stripBom(value: string): string {
+  return value.replace(/^\uFEFF/, '');
+}
+
 function normalizeSeparator(value: string): string {
   return value.replace(/[.]/g, '/').replace(/-/g, '/');
 }
@@ -105,12 +109,28 @@ async function invokeNetlifyFunction<T>(name: string, params?: Record<string, st
     throw new Error('台灣證交所服務回傳格式異常，請稍後再試');
   }
 
-  let payload: T | (FunctionErrorPayload & Record<string, unknown>);
+  const sanitized = stripBom(rawText);
+  const trimmed = sanitized.trim();
+
+  if (!trimmed) {
+    if (!response.ok) {
+      throw new Error(`台灣證交所服務暫時無法使用（HTTP ${response.status}）`);
+    }
+    throw new Error('台灣證交所服務未回傳有效內容，請稍後再試');
+  }
+
+  let payload: T | (FunctionErrorPayload & Record<string, unknown>) | null = null;
   try {
-    payload = JSON.parse(rawText) as T | (FunctionErrorPayload & Record<string, unknown>);
+    payload = JSON.parse(trimmed) as T | (FunctionErrorPayload & Record<string, unknown>);
   } catch (error) {
-    console.error(`Failed to parse Netlify function payload for ${name}`, rawText.slice(0, 200));
-    throw new Error('台灣證交所服務回傳格式異常，請稍後再試');
+    console.error(`Failed to parse Netlify function payload for ${name}`, trimmed.slice(0, 200));
+  }
+
+  if (!payload) {
+    const fallbackMessage = response.ok
+      ? '台灣證交所服務回傳格式異常，請稍後再試（函式回應非 JSON）'
+      : `台灣證交所服務暫時無法使用（HTTP ${response.status}）`;
+    throw new Error(fallbackMessage);
   }
 
   if (!response.ok) {
