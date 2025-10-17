@@ -13,6 +13,17 @@ const DAILY_ENDPOINT = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY'
 
 const TW_TZ_OFFSET = '+08:00';
 
+function normalizeSeparator(value: string): string {
+  return value.replace(/[.]/g, '/').replace(/-/g, '/');
+}
+
+function toGregorianYear(year: number): number {
+  if (!Number.isFinite(year)) {
+    return Number.NaN;
+  }
+  return year < 1911 ? year + 1911 : year;
+}
+
 function sanitizeNumber(value?: string | number): number | null {
   if (value === undefined || value === null) {
     return null;
@@ -29,19 +40,77 @@ function sanitizeNumber(value?: string | number): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function parseDate(value?: string): Date | null {
+export function parseTwseDate(value?: string): Date | null {
   if (!value) {
     return null;
   }
   const trimmed = value.trim();
-  const digitsOnly = trimmed.replace(/\D/g, '');
-  if (digitsOnly.length !== 8) {
+  if (!trimmed) {
     return null;
   }
-  const year = digitsOnly.slice(0, 4);
-  const month = digitsOnly.slice(4, 6);
-  const day = digitsOnly.slice(6, 8);
-  return new Date(`${year}-${month}-${day}T00:00:00${TW_TZ_OFFSET}`);
+
+  const separated = normalizeSeparator(trimmed);
+  const parts = separated.split('/').map((item) => item.trim()).filter(Boolean);
+  if (parts.length === 3) {
+    const [rawYear, rawMonth, rawDay] = parts;
+    const parsedYear = Number(rawYear);
+    const parsedMonth = Number(rawMonth);
+    const parsedDay = Number(rawDay);
+    if (
+      Number.isFinite(parsedYear) &&
+      Number.isFinite(parsedMonth) &&
+      Number.isFinite(parsedDay) &&
+      parsedMonth >= 1 &&
+      parsedMonth <= 12 &&
+      parsedDay >= 1 &&
+      parsedDay <= 31
+    ) {
+      const year = toGregorianYear(parsedYear);
+      if (!Number.isNaN(year)) {
+        const month = String(parsedMonth).padStart(2, '0');
+        const day = String(parsedDay).padStart(2, '0');
+        return new Date(`${year}-${month}-${day}T00:00:00${TW_TZ_OFFSET}`);
+      }
+    }
+  }
+
+  const digitsOnly = trimmed.replace(/\D/g, '');
+  if (digitsOnly.length === 8) {
+    const rawYear = Number(digitsOnly.slice(0, 4));
+    const rawMonth = Number(digitsOnly.slice(4, 6));
+    const rawDay = Number(digitsOnly.slice(6, 8));
+    if (
+      Number.isFinite(rawYear) &&
+      Number.isFinite(rawMonth) &&
+      Number.isFinite(rawDay) &&
+      rawMonth >= 1 &&
+      rawMonth <= 12 &&
+      rawDay >= 1 &&
+      rawDay <= 31
+    ) {
+      return new Date(`${rawYear}-${String(rawMonth).padStart(2, '0')}-${String(rawDay).padStart(2, '0')}T00:00:00${TW_TZ_OFFSET}`);
+    }
+  }
+
+  if (digitsOnly.length === 7) {
+    const rawYear = Number(digitsOnly.slice(0, 3));
+    const rawMonth = Number(digitsOnly.slice(3, 5));
+    const rawDay = Number(digitsOnly.slice(5, 7));
+    const gregorianYear = toGregorianYear(rawYear);
+    if (
+      Number.isFinite(gregorianYear) &&
+      Number.isFinite(rawMonth) &&
+      Number.isFinite(rawDay) &&
+      rawMonth >= 1 &&
+      rawMonth <= 12 &&
+      rawDay >= 1 &&
+      rawDay <= 31
+    ) {
+      return new Date(`${gregorianYear}-${String(rawMonth).padStart(2, '0')}-${String(rawDay).padStart(2, '0')}T00:00:00${TW_TZ_OFFSET}`);
+    }
+  }
+
+  return null;
 }
 
 export async function fetchTwseCompanies(): Promise<TwseCompany[]> {
@@ -92,7 +161,7 @@ function pickValue(row: TwseDailyRow, keys: string[]): string | undefined {
 
 function parseDailyRow(row: TwseDailyRow, symbol: string): PriceRecord | null {
   const dateValue = pickValue(row, ['Date', '日期', '年月日']);
-  const date = parseDate(dateValue);
+  const date = parseTwseDate(dateValue);
   if (!date) {
     return null;
   }
@@ -156,20 +225,46 @@ export async function fetchTwseDailySeries(
   const collected: PriceRecord[] = [];
   for (const slot of monthSlots) {
     const dateParam = `${slot.year}${String(slot.month + 1).padStart(2, '0')}01`;
-    const url = `${DAILY_ENDPOINT}?response=json&date=${dateParam}&stockNo=${encodeURIComponent(symbol)}`;
-    const response = await fetch(url, {
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
+    const url = `${DAILY_ENDPOINT}?date=${dateParam}&stockNo=${encodeURIComponent(symbol)}`;
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+    } catch (error) {
+      throw new Error(`台灣證交所連線失敗，請稍後再試（${symbol} ${slot.year}-${String(slot.month + 1).padStart(2, '0')}）`);
+    }
     if (!response.ok) {
-      throw new Error(`無法取得 ${symbol} 的日線資料 (${slot.year}-${slot.month + 1})`);
+      throw new Error(`無法取得 ${symbol} 的日線資料 (${slot.year}-${String(slot.month + 1).padStart(2, '0')})`);
     }
-    const payload = (await response.json()) as TwseDailyRow[];
-    if (!Array.isArray(payload)) {
-      continue;
+    const payload = await response.json();
+    const rows: TwseDailyRow[] = Array.isArray(payload)
+      ? payload
+      : Array.isArray((payload as { data?: TwseDailyRow[] }).data)
+        ? (payload as { data: TwseDailyRow[] }).data
+        : Array.isArray((payload as { fields?: string[] }).fields) &&
+            Array.isArray((payload as { data?: string[][] }).data)
+          ? (payload as { fields: string[]; data: string[][] }).data.map((row) => {
+              const record: TwseDailyRow = {};
+              (payload as { fields: string[] }).fields.forEach((field, index) => {
+                if (row[index] !== undefined) {
+                  record[field] = row[index];
+                }
+              });
+              return record;
+            })
+          : [];
+    if (rows.length === 0) {
+      const statMessage = typeof (payload as { stat?: string }).stat === 'string'
+        ? (payload as { stat: string }).stat
+        : undefined;
+      if (statMessage && statMessage !== 'OK') {
+        throw new Error(`${symbol}：${statMessage}`);
+      }
     }
-    for (const row of payload) {
+    for (const row of rows) {
       const record = parseDailyRow(row, symbol.trim());
       if (record) {
         if (record.timestamp < start || record.timestamp > end) {
