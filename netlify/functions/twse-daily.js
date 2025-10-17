@@ -445,27 +445,25 @@ exports.handler = async (event) => {
       collected.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
     );
 
+    const responseBody = {
+      symbol,
+      start: formatDateKey(startDate),
+      end: formatDateKey(endDate),
+      records: deduped,
+      warnings
+    };
+
     if (deduped.length === 0) {
-      return {
-        statusCode: 404,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({
-          error: `無法取得 ${symbol} 在所選區間的交易資料`,
-          warnings
-        })
-      };
+      const emptyMessage = `無法取得 ${symbol} 在所選區間的交易資料`;
+      responseBody.records = [];
+      responseBody.error = emptyMessage;
+      warnings.push(emptyMessage);
     }
 
     return {
       statusCode: 200,
       headers: BASE_HEADERS,
-      body: JSON.stringify({
-        symbol,
-        start: formatDateKey(startDate),
-        end: formatDateKey(endDate),
-        records: deduped,
-        warnings
-      })
+      body: JSON.stringify(responseBody)
     };
   } catch (error) {
     const debugId = `twse-daily-${Date.now()}`;

@@ -243,6 +243,11 @@ export async function fetchTwseDailySeries(
     end: `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
   });
 
+  const payloadError = typeof payload.error === 'string' ? payload.error.trim() : '';
+  if (payloadError) {
+    throw new Error(payloadError);
+  }
+
   if (!Array.isArray(payload.records) || payload.records.length === 0) {
     throw new Error(`無法取得 ${symbol} 在所選區間的交易資料`);
   }

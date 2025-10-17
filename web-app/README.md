@@ -1,6 +1,6 @@
 # Lazybacktest 雲端回測中心
 
-版本代碼：**LBK-NETLIFY-V8**
+版本代碼：**LBK-NETLIFY-V9**
 
 此資料夾為 Lazybacktest 的全功能瀏覽器版本，可直接部署至 Netlify。功能特色：
 
