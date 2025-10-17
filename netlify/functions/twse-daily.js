@@ -7,6 +7,86 @@ const BASE_HEADERS = {
   'Cache-Control': 'public, max-age=900'
 };
 
+function stripBom(value) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  return value.replace(/^\uFEFF/, '');
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[index + 1] === '"') {
+          current += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current.trim());
+  return result;
+}
+
+function parseCsvPayload(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    return null;
+  }
+
+  const trimmed = stripBom(rawText).trim();
+  if (!trimmed || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return null;
+  }
+
+  const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length <= 1 || !lines[0].includes(',')) {
+    return null;
+  }
+
+  const header = parseCsvLine(lines[0]);
+  if (header.length === 0) {
+    return null;
+  }
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const cells = parseCsvLine(lines[i]);
+    if (cells.length === 0) {
+      continue;
+    }
+
+    const record = {};
+    header.forEach((field, index) => {
+      if (field && cells[index] !== undefined) {
+        record[field] = cells[index];
+      }
+    });
+    if (Object.keys(record).length > 0) {
+      rows.push(record);
+    }
+  }
+
+  return rows.length > 0 ? rows : null;
+}
+
 const TW_TZ_OFFSET = '+08:00';
 
 function normalizeSeparator(value) {
@@ -278,7 +358,10 @@ exports.handler = async (event) => {
       response = await fetch(url, {
         headers: {
           Accept: 'application/json, text/plain, */*',
-          'User-Agent': FUNCTION_USER_AGENT
+          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+          'User-Agent': FUNCTION_USER_AGENT,
+          Referer: 'https://openapi.twse.com.tw/',
+          Origin: 'https://openapi.twse.com.tw'
         }
       });
     } catch (error) {
@@ -289,7 +372,7 @@ exports.handler = async (event) => {
 
     let rawText;
     try {
-      rawText = await response.text();
+      rawText = stripBom(await response.text());
     } catch (error) {
       console.error('TWSE daily read failed', symbol, dateParam, error);
       warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：資料讀取失敗`);
@@ -305,17 +388,32 @@ exports.handler = async (event) => {
     }
 
     const payload = parseJsonPayload(rawText);
-    if (!payload) {
-      console.error('TWSE daily payload parse failed', symbol, dateParam, rawText.slice(0, 200));
-      warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：台灣證交所回傳格式異常`);
-      continue;
+    let rows = [];
+    let statMessage;
+
+    if (payload) {
+      rows = mapRows(payload);
+      statMessage = typeof payload.stat === 'string' ? payload.stat : undefined;
+    } else {
+      const csvRows = parseCsvPayload(rawText);
+      if (csvRows) {
+        console.warn('TWSE daily fallback to CSV payload', symbol, dateParam);
+        rows = csvRows;
+      } else {
+        console.error('TWSE daily payload parse failed', symbol, dateParam, rawText.slice(0, 200));
+        warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：台灣證交所回傳格式異常`);
+        continue;
+      }
     }
 
-    const rows = mapRows(payload);
     if (rows.length === 0) {
-      const statMessage = typeof payload.stat === 'string' ? payload.stat : undefined;
       if (statMessage && statMessage !== 'OK') {
         warnings.push(`${symbol}：${statMessage}（${slot.year}-${String(slot.month + 1).padStart(2, '0')}）`);
+      } else {
+        const fallbackMessage = rawText.includes('查無資料')
+          ? '查無資料'
+          : '未提供有效資料';
+        warnings.push(`${buildMonthlyLabel(symbol, slot.year, slot.month)}：${fallbackMessage}`);
       }
       continue;
     }

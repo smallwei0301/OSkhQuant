@@ -7,6 +7,86 @@ const BASE_HEADERS = {
   'Cache-Control': 'public, max-age=3600'
 };
 
+function stripBom(value) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  return value.replace(/^\uFEFF/, '');
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[index + 1] === '"') {
+          current += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current.trim());
+  return result;
+}
+
+function parseCsvPayload(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    return null;
+  }
+
+  const trimmed = stripBom(rawText).trim();
+  if (!trimmed || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return null;
+  }
+
+  const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length <= 1 || !lines[0].includes(',')) {
+    return null;
+  }
+
+  const header = parseCsvLine(lines[0]);
+  if (header.length === 0) {
+    return null;
+  }
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const cells = parseCsvLine(lines[i]);
+    if (cells.length === 0) {
+      continue;
+    }
+
+    const record = {};
+    header.forEach((field, index) => {
+      if (field && cells[index] !== undefined) {
+        record[field] = cells[index];
+      }
+    });
+    if (Object.keys(record).length > 0) {
+      rows.push(record);
+    }
+  }
+
+  return rows.length > 0 ? rows : null;
+}
+
 function pickValue(row, keys) {
   for (const key of keys) {
     if (typeof row[key] === 'string' && row[key].trim()) {
@@ -38,11 +118,14 @@ exports.handler = async () => {
     const response = await fetch(COMPANY_ENDPOINT, {
       headers: {
         Accept: 'application/json, text/plain, */*',
-        'User-Agent': FUNCTION_USER_AGENT
+        'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+        'User-Agent': FUNCTION_USER_AGENT,
+        Referer: 'https://openapi.twse.com.tw/',
+        Origin: 'https://openapi.twse.com.tw'
       }
     });
 
-    const rawText = await response.text();
+    const rawText = stripBom(await response.text());
 
     if (!response.ok) {
       return {
@@ -58,27 +141,32 @@ exports.handler = async () => {
     try {
       payload = JSON.parse(rawText);
     } catch (error) {
-      console.error('TWSE company payload parse failed', rawText.slice(0, 200));
-      return {
-        statusCode: 502,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({
-          error: '台灣證交所回傳格式異常，請稍後重試'
-        })
-      };
+      payload = null;
     }
 
-    if (!Array.isArray(payload)) {
-      return {
-        statusCode: 502,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({
-          error: '台灣證交所回傳格式異常，請稍後重試'
-        })
-      };
+    let dataset;
+    if (Array.isArray(payload)) {
+      dataset = payload;
+    } else if (payload && Array.isArray(payload.data)) {
+      dataset = payload.data;
+    } else {
+      const csvRows = parseCsvPayload(rawText);
+      if (csvRows) {
+        console.warn('TWSE company fallback to CSV payload');
+        dataset = csvRows;
+      } else {
+        console.error('TWSE company payload parse failed', rawText.slice(0, 200));
+        return {
+          statusCode: 502,
+          headers: BASE_HEADERS,
+          body: JSON.stringify({
+            error: '台灣證交所回傳格式異常，請稍後重試'
+          })
+        };
+      }
     }
 
-    const companies = payload
+    const companies = dataset
       .map(mapCompany)
       .filter((item) => Boolean(item))
       .sort((a, b) => a.code.localeCompare(b.code));
