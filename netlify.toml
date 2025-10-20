@@ -1,0 +1,12 @@
+[build]
+  base = "frontend"
+  command = "npm install && npm run build"
+  publish = "frontend/out"
+
+[dev]
+  command = "npm run dev"
+  framework = "next"
+  targetPort = 3000
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
