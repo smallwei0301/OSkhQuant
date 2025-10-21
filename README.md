@@ -33,6 +33,7 @@ npm run dev
 
 1. **核心服務需求**：`pip install -r requirements.txt`
    *內容物只有資料處理、資料庫、排程等後端元件，Netlify 建置時會以這份清單為準。*
+   *若使用 Netlify 等預設 Python 3.13 的環境，`requirements.txt` 會自動安裝對應的 `psycopg 3.2.x` 二進位套件，免去自行編譯的麻煩。*
 2. **需要圖形介面時**：`pip install -r requirements-gui.txt`
    *這份清單只有 PyQt5。請在本地電腦開發桌面工具時，先完成第 1 步再額外安裝這份。*
 3. **開啟 MiniQMT 行情／交易功能時**：請先向券商或看海量化官方取得對應版本的 `xtquant` 安裝包，再於本地終端機執行：

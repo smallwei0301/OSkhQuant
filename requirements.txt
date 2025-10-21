@@ -28,7 +28,9 @@ clickhouse-connect==0.6.19
 celery==5.4.0
 redis==5.0.4
 apscheduler==3.10.4
-psycopg[binary]==3.2.1
+# psycopg 3.2.1 尚未提供 Python 3.13 的預編譯版本，
+# 故調整為 3.2.x 區間以相容 Netlify 預設環境。
+psycopg[binary]>=3.2,<3.3
 
 # PyQt5 與其他桌面 GUI 依賴已移至 requirements-gui.txt，
 # 以避免在無圖形介面的環境（例如 Netlify）部署時安裝失敗。
