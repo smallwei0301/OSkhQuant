@@ -1,0 +1,19 @@
+[project]
+name = "lazybacktest-api"
+version = "0.1.0"
+description = "Lazybacktest FastAPI service for Netlify Functions"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi==0.109.2",
+  "uvicorn[standard]==0.27.1",
+  "pydantic-settings==2.2.1",
+  "mangum==0.17.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.1.1"
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", ".."]

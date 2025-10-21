@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Lazybacktest Shared Models",
+  "definitions": {
+    "SlippageConfig": {
+      "type": "object",
+      "properties": {
+        "type": { "enum": ["ratio", "tick"], "default": "ratio" },
+        "ratio": { "type": "number", "minimum": 0 },
+        "tickSize": { "type": "number", "minimum": 0 },
+        "tickCount": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "CostProfile": {
+      "type": "object",
+      "properties": {
+        "minCommission": { "type": "number", "minimum": 0, "default": 5 },
+        "commissionRate": { "type": "number", "minimum": 0, "default": 0.0003 },
+        "stampTaxRate": { "type": "number", "minimum": 0, "default": 0.001 },
+        "flowFee": { "type": "number", "minimum": 0, "default": 0.1 },
+        "slippage": { "$ref": "#/definitions/SlippageConfig" }
+      },
+      "required": ["minCommission", "commissionRate", "stampTaxRate", "flowFee", "slippage"],
+      "additionalProperties": false
+    },
+    "TradeCostRequest": {
+      "type": "object",
+      "properties": {
+        "stockCode": { "type": "string" },
+        "direction": { "enum": ["buy", "sell"] },
+        "price": { "type": "number", "minimum": 0 },
+        "volume": { "type": "integer", "minimum": 0 },
+        "costProfile": { "$ref": "#/definitions/CostProfile" }
+      },
+      "required": ["stockCode", "direction", "price", "volume", "costProfile"],
+      "additionalProperties": false,
+      "example": {
+        "stockCode": "TW.2330",
+        "direction": "buy",
+        "price": 100,
+        "volume": 1000,
+        "costProfile": {
+          "minCommission": 5,
+          "commissionRate": 0.0003,
+          "stampTaxRate": 0.001,
+          "flowFee": 0.1,
+          "slippage": {
+            "type": "ratio",
+            "ratio": 0.001
+          }
+        }
+      }
+    },
+    "TradeCostBreakdown": {
+      "type": "object",
+      "properties": {
+        "commission": { "type": "number" },
+        "stampTax": { "type": "number" },
+        "transferFee": { "type": "number" },
+        "flowFee": { "type": "number" },
+        "slippagePrice": { "type": "number" }
+      },
+      "required": ["commission", "stampTax", "transferFee", "flowFee", "slippagePrice"],
+      "additionalProperties": false
+    },
+    "TradeCostResponse": {
+      "type": "object",
+      "properties": {
+        "actualPrice": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "breakdown": { "$ref": "#/definitions/TradeCostBreakdown" }
+      },
+      "required": ["actualPrice", "totalCost", "breakdown"],
+      "additionalProperties": false
+    },
+    "TradeSummary": {
+      "type": "object",
+      "properties": {
+        "strategyId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "trades": { "type": "integer" },
+        "realizedPnl": { "type": "number" },
+        "unrealizedPnl": { "type": "number" },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      },
+      "required": ["strategyId", "timestamp", "trades", "realizedPnl", "unrealizedPnl", "warnings"],
+      "additionalProperties": false,
+      "example": {
+        "strategyId": "demo-strategy",
+        "timestamp": "2024-01-01T00:00:00Z",
+        "trades": 0,
+        "realizedPnl": 0,
+        "unrealizedPnl": 0,
+        "warnings": ["尚未連線"]
+      }
+    },
+    "RiskCheckRequest": {
+      "type": "object",
+      "properties": {
+        "position": { "type": "integer", "minimum": 0 },
+        "maxPosition": { "type": "integer", "minimum": 0 },
+        "openOrders": { "type": "integer", "minimum": 0 },
+        "maxOrders": { "type": "integer", "minimum": 0 },
+        "floatingLoss": { "type": "number", "minimum": 0 },
+        "lossLimit": { "type": "number", "minimum": 0 }
+      },
+      "required": ["position", "maxPosition", "openOrders", "maxOrders", "floatingLoss", "lossLimit"],
+      "additionalProperties": false
+    },
+    "RiskCheckResponse": {
+      "type": "object",
+      "properties": {
+        "passed": { "type": "boolean" },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      },
+      "required": ["passed", "reasons"],
+      "additionalProperties": false
+    }
+  }
+}
