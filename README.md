@@ -8,6 +8,15 @@
 
 本仓库提供的是看海量化交易系统的**完整程序源码**，面向具备一定编程基础的开发者和量化研究人员。
 
+### 🧰 安裝依賴的最佳實踐
+
+考量到 Netlify 等雲端部署環境缺乏桌面圖形界面支援，建議依用途拆分安裝：
+
+* **雲端 / 伺服器部署**：僅需安裝 `requirements.txt` 內的核心依賴即可，確保建置流程不會因 PyQt5 而失敗。
+* **本地桌面 GUI**：額外執行 `pip install -r requirements-gui.txt` 取得 PyQt5 套件。該套件僅在具備圖形界面的作業系統（Windows、macOS）才能順利安裝。
+
+如此拆分能同時兼顧每日 1 萬瀏覽量網站的穩定部署，以及桌面版工具的完整體驗。
+
 ## Lazybacktest 前端控制台
 
 `frontend/` 目錄提供以 Vite 建立的 React + TypeScript 控制台，整合 Ant Design 與 Chakra UI 表單元件，支援資料下載、任務看板、策略回測與結果儀表板等功能。開始前請先複製 `.env.example` 為 `.env` 並設定以下環境變數：
