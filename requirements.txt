@@ -1,7 +1,4 @@
-# GUI 相關套件
-PyQt5==5.15.11
-
-# 數據處理
+# 核心套件 (部署與後端服務共用)
 pandas==2.3.1
 numpy==2.3.2
 matplotlib==3.10.0
@@ -29,3 +26,6 @@ celery==5.4.0
 redis==5.0.4
 apscheduler==3.10.4
 psycopg[binary]==3.2.1
+
+# PyQt5 與其他桌面 GUI 依賴已移至 requirements-gui.txt，
+# 以避免在無圖形介面的環境（例如 Netlify）部署時安裝失敗。
