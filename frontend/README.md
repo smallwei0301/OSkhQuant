@@ -39,6 +39,7 @@ npm run build
 ```
 
 - Netlify 會讀取根目錄的 `netlify.toml`，自動配置快取與 SPA 重新導向。
+- `netlify.toml` 中設定 `base = "frontend"`，讓建置流程只安裝前端所需的 Node.js 套件，避免 Netlify 嘗試安裝 `requirements.txt` 內的 PyQt5 而失敗。
 - `QueryClient` 預設快取 1 分鐘資料，避免重複請求，適合每日 6,000 名活躍使用者的負載。
 - 建議在 Netlify 啟用壓縮與 Edge Function 快取，以縮短台灣使用者的延遲。
 
@@ -47,6 +48,7 @@ npm run build
 | 組件 | 版本代號 |
 | --- | --- |
 | 前端 SPA | `LB-frontend-v20240509-1` |
+| Netlify 部署設定 | `LB-deploy-v20250214-1` |
 
 ## 測試建議
 
