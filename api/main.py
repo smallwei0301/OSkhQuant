@@ -1,16 +1,17 @@
 """FastAPI application entrypoint for Lazybacktest."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-from pathlib import Path
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from celery.result import AsyncResult
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
-from khQTTools import download_and_store_data
+from fastapi.encoders import jsonable_encoder
 
 from .auth import secured_dependency
 from .backtest import BacktestTaskManager
@@ -18,7 +19,13 @@ from .schemas import (
     BacktestRunRequest,
     BacktestTaskStatus,
     DataDownloadRequest,
-    DataDownloadResponse,
+    KhFrameTaskRequest,
+    ScheduleJobRequest,
+    ScheduleJobResponse,
+    SupplementHistoryRequest,
+    TaskLogEntry,
+    TaskStatusResponse,
+    TaskSubmissionResponse,
     DataHistoryRequest,
     DataHistoryResponse,
     TradeCostRequest,
@@ -28,8 +35,11 @@ from .schemas import (
 )
 from .trade import calculate_trade_cost_api, generate_trade_signal_api
 from .history import fetch_history_data
+from .celery_app import celery_app
+from .scheduler import task_scheduler
+from .tasks import download_data_task, khframe_pipeline_task, supplement_history_task
 
-API_VERSION = "api_v20240518_01"
+API_VERSION = "api_v20240518_03"
 LOGGER = logging.getLogger("lazybacktest.api")
 
 app = FastAPI(
@@ -65,43 +75,24 @@ def health_check() -> Dict[str, str]:
 
 @app.post(
     "/data/download",
-    response_model=DataDownloadResponse,
+    response_model=TaskSubmissionResponse,
     dependencies=[Depends(secured_dependency)],
-    summary="下載並儲存行情資料",
+    summary="建立行情下載背景任務",
 )
-def download_data(request: DataDownloadRequest) -> DataDownloadResponse:
-    """下載資料至本地路徑，回傳保存的檔案列表。"""
-    saved_files: List[str] = []
+def download_data(request: DataDownloadRequest) -> TaskSubmissionResponse:
+    task = download_data_task.delay(request.dict())
+    return TaskSubmissionResponse(task_id=task.id, state="PENDING", detail="任務已送出")
 
-    def _log(message: str) -> None:
-        LOGGER.info("[data.download] %s", message)
 
-    request_path = Path(request.local_data_path).expanduser()
-    request_path.mkdir(parents=True, exist_ok=True)
-
-    try:
-        download_and_store_data(
-            local_data_path=str(request_path),
-            stock_files=request.stock_files,
-            field_list=request.field_list,
-            period_type=request.period_type,
-            start_date=request.start_date,
-            end_date=request.end_date,
-            dividend_type=request.dividend_type,
-            time_range=request.time_range,
-            log_callback=_log,
-        )
-    except Exception as exc:  # pylint: disable=broad-except
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    for file_path in request_path.glob("*.csv"):
-        if request.period_type in file_path.name:
-            saved_files.append(str(file_path))
-
-    return DataDownloadResponse(
-        message="資料下載完成",
-        saved_files=sorted(saved_files),
-    )
+@app.post(
+    "/data/supplement",
+    response_model=TaskSubmissionResponse,
+    dependencies=[Depends(secured_dependency)],
+    summary="補充歷史行情資料",
+)
+def supplement_history(request: SupplementHistoryRequest) -> TaskSubmissionResponse:
+    task = supplement_history_task.delay(request.dict())
+    return TaskSubmissionResponse(task_id=task.id, state="PENDING", detail="任務已送出")
 
 
 @app.post(
@@ -143,6 +134,82 @@ def get_backtest_status(task_id: str) -> BacktestTaskStatus:
 
 
 @app.post(
+    "/khframe/run",
+    response_model=TaskSubmissionResponse,
+    dependencies=[Depends(secured_dependency)],
+    summary="啟動 KhFrame 流程背景任務",
+)
+def run_khframe_task(request: KhFrameTaskRequest) -> TaskSubmissionResponse:
+    task = khframe_pipeline_task.delay(request.dict())
+    return TaskSubmissionResponse(task_id=task.id, state="PENDING", detail="任務已送出")
+
+
+@app.get(
+    "/tasks/{task_id}",
+    response_model=TaskStatusResponse,
+    dependencies=[Depends(secured_dependency)],
+    summary="查詢任務進度與最新訊息",
+)
+def get_task(task_id: str) -> TaskStatusResponse:
+    result = AsyncResult(task_id, app=celery_app)
+    if result is None or result.id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到對應任務")
+    return _build_task_status_response(result)
+
+
+@app.websocket("/ws/tasks/{task_id}")
+async def task_status_ws(websocket: WebSocket, task_id: str) -> None:
+    await websocket.accept()
+    try:
+        last_payload = None
+        while True:
+            result = AsyncResult(task_id, app=celery_app)
+            if result is None or result.id is None:
+                await websocket.send_json({"detail": "任務不存在", "task_id": task_id})
+                break
+            status_obj = _build_task_status_response(result)
+            payload = jsonable_encoder(status_obj)
+            if payload != last_payload:
+                await websocket.send_json(payload)
+                last_payload = payload
+            if status_obj.state in {"SUCCESS", "FAILURE"}:
+                break
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        LOGGER.info("WebSocket disconnected for task %s", task_id)
+
+
+@app.post(
+    "/tasks/schedule",
+    response_model=ScheduleJobResponse,
+    dependencies=[Depends(secured_dependency)],
+    summary="新增或更新排程任務",
+)
+def schedule_task(request: ScheduleJobRequest) -> ScheduleJobResponse:
+    return task_scheduler.add_or_update_job(request)
+
+
+@app.get(
+    "/tasks/schedule",
+    response_model=List[ScheduleJobResponse],
+    dependencies=[Depends(secured_dependency)],
+    summary="列出所有排程任務",
+)
+def list_schedules() -> List[ScheduleJobResponse]:
+    return task_scheduler.list_jobs()
+
+
+@app.delete(
+    "/tasks/schedule/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(secured_dependency)],
+    summary="刪除排程任務",
+)
+def delete_schedule(job_id: str) -> None:
+    task_scheduler.remove_job(job_id)
+
+
+@app.post(
     "/trade/cost",
     response_model=TradeCostResponse,
     dependencies=[Depends(secured_dependency)],
@@ -168,4 +235,58 @@ async def global_exception_handler(exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=500,
         content={"detail": "伺服器內部錯誤", "error": str(exc)},
+    )
+
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    await task_scheduler.start()
+
+
+@app.on_event("shutdown")
+async def _on_shutdown() -> None:
+    await task_scheduler.shutdown()
+
+
+def _parse_datetime(value: object) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def _build_task_status_response(result: AsyncResult) -> TaskStatusResponse:
+    meta = result.info if isinstance(result.info, dict) else {}
+    state = result.state or "PENDING"
+
+    logs: List[TaskLogEntry] = []
+    for entry in meta.get("logs", []):
+        if not isinstance(entry, dict):
+            continue
+        timestamp = _parse_datetime(entry.get("timestamp")) or datetime.utcnow()
+        level = entry.get("level", "INFO")
+        try:
+            log_item = TaskLogEntry(timestamp=timestamp, message=str(entry.get("message", "")), level=level)
+        except ValueError:
+            log_item = TaskLogEntry(timestamp=timestamp, message=str(entry.get("message", "")), level="INFO")
+        logs.append(log_item)
+
+    result_payload = meta.get("result") if isinstance(meta, dict) else None
+    if result_payload is None and state == "SUCCESS" and isinstance(result.result, dict):
+        result_payload = result.result
+
+    return TaskStatusResponse(
+        task_id=result.id or "",
+        state=state,
+        status=meta.get("status") if isinstance(meta, dict) else None,
+        detail=meta.get("detail") if isinstance(meta, dict) else None,
+        progress=meta.get("progress") if isinstance(meta, dict) else None,
+        logs=logs,
+        result=result_payload if isinstance(result_payload, dict) else None,
+        started_at=_parse_datetime(meta.get("started_at")) if isinstance(meta, dict) else None,
+        finished_at=_parse_datetime(meta.get("finished_at")) if isinstance(meta, dict) else None,
     )

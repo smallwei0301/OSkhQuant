@@ -3,86 +3,95 @@ from __future__ import annotations
 
 import importlib.util
 import logging
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Dict, List
-from uuid import uuid4
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
+from celery import states
+from celery.result import AsyncResult
 
 from khConfig import KhConfig
 from khQTTools import KhQuTools, khHistory
 from khTrade import KhTradeManager
 
+from .celery_app import celery_app
 from .schemas import BacktestRunRequest, BacktestTaskStatus
+from .tasks import run_backtest_task
 
 LOGGER = logging.getLogger(__name__)
 
 
 class APIGuiLogger:
-    """Lightweight logger used to capture框架訊息."""
+    """Backtest logger that records messages and optionally forwards callbacks."""
 
-    def __init__(self, task_id: str) -> None:
-        self.task_id = task_id
+    def __init__(self, callback: Optional[Any] = None) -> None:
+        self._callback = callback
         self.messages: List[str] = []
 
     def log_message(self, message: str, level: str = "INFO") -> None:
         formatted = f"[{level}] {message}"
-        LOGGER.info("[task:%s] %s", self.task_id, formatted)
+        LOGGER.info(formatted)
         self.messages.append(formatted)
+        if self._callback:
+            try:
+                self._callback(message, level)
+            except Exception:  # pylint: disable=broad-except
+                LOGGER.exception("Backtest task callback failed")
 
 
 class BacktestTaskManager:
-    """Manage asynchronous backtest tasks."""
-
-    def __init__(self) -> None:
-        self._executor = ThreadPoolExecutor(max_workers=2)
-        self._tasks: Dict[str, BacktestTaskStatus] = {}
-        self._lock = threading.Lock()
+    """Proxy helper that submits and inspects Celery backtest tasks."""
 
     def submit(self, request: BacktestRunRequest) -> BacktestTaskStatus:
-        task_id = uuid4().hex
-        status = BacktestTaskStatus(
-            task_id=task_id,
+        payload = request.dict()
+        async_result = run_backtest_task.delay(payload)
+        LOGGER.info("Queued backtest task %s", async_result.id)
+        return BacktestTaskStatus(
+            task_id=async_result.id,
             status="pending",
-            detail="任務已建立，準備啟動",
+            detail="任務已送出，等待執行",
             started_at=datetime.utcnow(),
+            progress=0.0,
         )
-        with self._lock:
-            self._tasks[task_id] = status
-
-        self._executor.submit(self._run_task, task_id, request)
-        return status
 
     def get(self, task_id: str) -> BacktestTaskStatus:
-        with self._lock:
-            if task_id not in self._tasks:
-                raise KeyError(task_id)
-            return self._tasks[task_id]
+        result = AsyncResult(task_id, app=celery_app)
+        if result is None or result.id is None:
+            raise KeyError(task_id)
 
-    # ---- internal helpers -------------------------------------------------
-    def _run_task(self, task_id: str, request: BacktestRunRequest) -> None:
-        logger = APIGuiLogger(task_id)
-        with self._lock:
-            self._tasks[task_id].status = "running"
-            self._tasks[task_id].detail = "載入設定與策略中"
+        meta = result.info or {}
 
-        try:
-            result_path = execute_backtest(request, logger)
-            with self._lock:
-                self._tasks[task_id].status = "completed"
-                self._tasks[task_id].detail = "回測流程完成"
-                self._tasks[task_id].result_path = result_path
-                self._tasks[task_id].finished_at = datetime.utcnow()
-        except Exception as exc:  # pylint: disable=broad-except
-            LOGGER.exception("Backtest task %s failed", task_id)
-            with self._lock:
-                self._tasks[task_id].status = "failed"
-                self._tasks[task_id].detail = str(exc)
-                self._tasks[task_id].finished_at = datetime.utcnow()
+        status = _map_state(result.state)
+        detail = meta.get("detail") if isinstance(meta, dict) else None
+        result_path = None
+        progress = None
+        logs: List[Dict[str, Any]] = []
+
+        if isinstance(meta, dict):
+            result_payload = meta.get("result")
+            if isinstance(result_payload, dict):
+                result_path = result_payload.get("result_path")
+            progress = meta.get("progress")
+            logs = meta.get("logs", [])
+
+        started_at = _parse_datetime(meta.get("started_at")) if isinstance(meta, dict) else None
+        finished_at = _parse_datetime(meta.get("finished_at")) if isinstance(meta, dict) else None
+
+        if result.state == states.SUCCESS and isinstance(result.result, dict) and not result_path:
+            result_path = result.result.get("result_path")
+
+        return BacktestTaskStatus(
+            task_id=task_id,
+            status=status,
+            detail=detail,
+            result_path=result_path,
+            started_at=started_at or datetime.utcnow(),
+            finished_at=finished_at,
+            progress=progress,
+            logs=logs,
+        )
 
 
 def execute_backtest(request: BacktestRunRequest, logger: APIGuiLogger) -> str:
@@ -198,3 +207,24 @@ def _load_strategy_module(strategy_path: str):
     module = importlib.util.module_from_spec(strategy_spec)
     strategy_spec.loader.exec_module(module)  # type: ignore[assignment]
     return module
+
+
+def _map_state(state: str) -> str:
+    mapping = {
+        states.PENDING: "pending",
+        states.STARTED: "running",
+        "PROGRESS": "running",
+        states.SUCCESS: "completed",
+        states.FAILURE: "failed",
+        states.RETRY: "running",
+    }
+    return mapping.get(state, "pending")
+
+
+def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
