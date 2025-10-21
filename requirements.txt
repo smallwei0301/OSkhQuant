@@ -15,7 +15,10 @@ typing-extensions==4.14.1
 openpyxl==3.1.5
 xlrd==2.0.1
 tabulate==0.9.0
-xtquant
+
+# MiniQMT 交易端依賴（需自行安裝 xtquant 套件）
+# xtquant 官方並未在 PyPI 發佈套件，因此請依 README 指引，
+# 透過券商或官方提供的安裝包手動安裝對應版本後再啟動交易功能。
 SQLAlchemy==2.0.36
 boto3==1.35.54
 oss2==2.18.1
