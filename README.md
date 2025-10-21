@@ -27,6 +27,26 @@ npm run dev
 
 部署至 Netlify 時，可直接使用專案內的 `netlify.toml` 快取與安全性設定，並建議在 Netlify 後台啟用環境變數與自動化預設快取政策，以服務每日約 6,000 名活躍使用者。
 
+## 🐍 Python 環境安裝指引
+
+專案同時包含桌面版 GUI 與雲端服務元件，因此我們把 Python 套件分成三個層次，避免在 Netlify 等無圖形介面的環境部署時安裝失敗：
+
+1. **核心服務需求**：`pip install -r requirements.txt`
+   *內容物只有資料處理、資料庫、排程等後端元件，Netlify 建置時會以這份清單為準。*
+   *若使用 Netlify 等預設 Python 3.13 的環境，`requirements.txt` 會自動安裝對應的 `psycopg 3.2.x` 二進位套件，免去自行編譯的麻煩。*
+2. **需要圖形介面時**：`pip install -r requirements-gui.txt`
+   *這份清單只有 PyQt5。請在本地電腦開發桌面工具時，先完成第 1 步再額外安裝這份。*
+3. **開啟 MiniQMT 行情／交易功能時**：請先向券商或看海量化官方取得對應版本的 `xtquant` 安裝包，再於本地終端機執行：
+
+   ```bash
+   pip install /path/to/xtquant-<version>-py3-none-any.whl
+   python -c "import xtquant; print(xtquant.__version__)"
+   ```
+
+   *`xtquant` 尚未於 PyPI 發佈，且需在授權過的本地環境安裝。雲端部署若沒有實際交易需求，可以跳過這一步。*
+
+換句話說，如果把專案比喻成「雲端 API 工廠 + 本地操作面板」，第一份清單是讓工廠順利運作的機械零件，第二份清單則是控制面板上的按鈕與螢幕，而第三步的 `xtquant` 則像是工廠與券商專線連結的「網路閘道」，必須向官方領取專用門卡後才能啟用。
+
 **如果您希望直接使用，无需配置开发环境，可以选择：**
 
 💡 **推荐使用打包好的exe程序** - 已经打包好的可执行程序，开箱即用，无需安装Python环境和依赖库。

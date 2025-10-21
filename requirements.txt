@@ -1,7 +1,4 @@
-# GUI 相關套件
-PyQt5==5.15.11
-
-# 數據處理
+# 核心套件 (部署與後端服務共用)
 pandas==2.3.1
 numpy==2.3.2
 matplotlib==3.10.0
@@ -18,7 +15,10 @@ typing-extensions==4.14.1
 openpyxl==3.1.5
 xlrd==2.0.1
 tabulate==0.9.0
-xtquant
+
+# MiniQMT 交易端依賴（需自行安裝 xtquant 套件）
+# xtquant 官方並未在 PyPI 發佈套件，因此請依 README 指引，
+# 透過券商或官方提供的安裝包手動安裝對應版本後再啟動交易功能。
 SQLAlchemy==2.0.36
 boto3==1.35.54
 oss2==2.18.1
@@ -28,4 +28,9 @@ clickhouse-connect==0.6.19
 celery==5.4.0
 redis==5.0.4
 apscheduler==3.10.4
-psycopg[binary]==3.2.1
+# psycopg 3.2.1 尚未提供 Python 3.13 的預編譯版本，
+# 故調整為 3.2.x 區間以相容 Netlify 預設環境。
+psycopg[binary]>=3.2,<3.3
+
+# PyQt5 與其他桌面 GUI 依賴已移至 requirements-gui.txt，
+# 以避免在無圖形介面的環境（例如 Netlify）部署時安裝失敗。
