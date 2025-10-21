@@ -8,6 +8,25 @@
 
 本仓库提供的是看海量化交易系统的**完整程序源码**，面向具备一定编程基础的开发者和量化研究人员。
 
+## Lazybacktest 前端控制台
+
+`frontend/` 目錄提供以 Vite 建立的 React + TypeScript 控制台，整合 Ant Design 與 Chakra UI 表單元件，支援資料下載、任務看板、策略回測與結果儀表板等功能。開始前請先複製 `.env.example` 為 `.env` 並設定以下環境變數：
+
+- `VITE_API_BASE_URL`：後端 API 入口，例如 `https://api.lazybacktest.example.com`
+- `VITE_WS_BASE_URL`：WebSocket 入口，例如 `wss://ws.lazybacktest.example.com`
+- `VITE_AUTH0_*`：Auth0 登入所需資訊
+- `VITE_RUM_ENDPOINT`：即時使用者體驗回報 (RUM) 收集端點
+
+安裝與開發流程：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+部署至 Netlify 時，可直接使用專案內的 `netlify.toml` 快取與安全性設定，並建議在 Netlify 後台啟用環境變數與自動化預設快取政策，以服務每日約 6,000 名活躍使用者。
+
 **如果您希望直接使用，无需配置开发环境，可以选择：**
 
 💡 **推荐使用打包好的exe程序** - 已经打包好的可执行程序，开箱即用，无需安装Python环境和依赖库。
