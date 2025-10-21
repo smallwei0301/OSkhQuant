@@ -97,10 +97,23 @@ class BacktestTaskStatus(BaseModel):
     status: Literal["pending", "running", "completed", "failed"]
     detail: Optional[str] = None
     result_path: Optional[str] = None
+    backtest_id: Optional[str] = None
     started_at: datetime
     finished_at: Optional[datetime] = None
     progress: Optional[float] = None
     logs: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class BacktestReportResponse(BaseModel):
+    backtest_id: str
+    status: str
+    result_path: Optional[str] = None
+    cost_summary: Dict[str, Any] = Field(default_factory=dict)
+    performance_summary: Dict[str, Any] = Field(default_factory=dict)
+    trade_summary: Dict[str, Any] = Field(default_factory=dict)
+    report: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
 
 
 class TradeCostConfig(BaseModel):

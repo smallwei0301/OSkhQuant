@@ -54,6 +54,7 @@ class BacktestTaskManager:
             detail="任務已送出，等待執行",
             started_at=datetime.utcnow(),
             progress=0.0,
+            backtest_id=None,
         )
 
     def get(self, task_id: str) -> BacktestTaskStatus:
@@ -66,6 +67,7 @@ class BacktestTaskManager:
         status = _map_state(result.state)
         detail = meta.get("detail") if isinstance(meta, dict) else None
         result_path = None
+        backtest_id = None
         progress = None
         logs: List[Dict[str, Any]] = []
 
@@ -73,6 +75,7 @@ class BacktestTaskManager:
             result_payload = meta.get("result")
             if isinstance(result_payload, dict):
                 result_path = result_payload.get("result_path")
+                backtest_id = result_payload.get("backtest_id")
             progress = meta.get("progress")
             logs = meta.get("logs", [])
 
@@ -81,12 +84,14 @@ class BacktestTaskManager:
 
         if result.state == states.SUCCESS and isinstance(result.result, dict) and not result_path:
             result_path = result.result.get("result_path")
+            backtest_id = backtest_id or result.result.get("backtest_id")
 
         return BacktestTaskStatus(
             task_id=task_id,
             status=status,
             detail=detail,
             result_path=result_path,
+            backtest_id=backtest_id,
             started_at=started_at or datetime.utcnow(),
             finished_at=finished_at,
             progress=progress,
@@ -186,18 +191,28 @@ def execute_backtest(request: BacktestRunRequest, logger: APIGuiLogger) -> str:
         "__trade_manager__": trade_manager,
     }
 
+    signals = []
     if hasattr(strategy_module, "khHandlebar"):
-        signals = strategy_module.khHandlebar(context)
-        logger.log_message(f"策略執行完成，產生 {len(signals) if signals else 0} 筆信號")
+        signals = strategy_module.khHandlebar(context) or []
+        logger.log_message(f"策略執行完成，產生 {len(signals)} 筆信號")
     else:
         logger.log_message("策略未實作 khHandlebar 函數", level="WARNING")
+
+    try:
+        trade_manager.process_signals(signals)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.log_message(f"處理交易信號發生例外: {exc}", level="ERROR")
+
+    report_payload = trade_manager.generate_report()
+    report_payload["signals"] = signals
+    report_payload["messages"] = logger.messages
 
     result_directory = Path("backtest_results")
     result_directory.mkdir(exist_ok=True)
     result_file = result_directory / f"preview_{Path(request.strategy_path).stem}.log"
     result_file.write_text("\n".join(logger.messages), encoding="utf-8")
 
-    return str(result_file)
+    return {"result_path": str(result_file), "report": report_payload}
 
 
 def _load_strategy_module(strategy_path: str):
