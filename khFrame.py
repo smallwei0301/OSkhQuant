@@ -464,8 +464,15 @@ class MyTraderCallback(XtQuantTraderCallback):
 
 class KhQuantFramework:
     """量化交易框架主类"""
-    
-    def __init__(self, config_path: str, strategy_file: str, trader_callback=None):
+
+    def __init__(
+        self,
+        config_path: str,
+        strategy_file: str,
+        trader_callback=None,
+        *,
+        headless: bool = False,
+    ):
         """初始化框架
         
         Args:
@@ -499,6 +506,9 @@ class KhQuantFramework:
         self.run_mode = self.config.run_mode
         
         self.trader_callback = trader_callback  # 保存交易回调函数
+        self.headless = headless or not (
+            trader_callback and hasattr(trader_callback, "gui")
+        )
         
         # 创建触发器
         self.trigger = TriggerFactory.create_trigger(self, self.config.config_dict)
@@ -536,7 +546,7 @@ class KhQuantFramework:
         
     def load_strategy(self, strategy_file: str):
         """动态加载策略模块
-        
+
         Args:
             strategy_file: 策略文件路径
             
@@ -547,6 +557,24 @@ class KhQuantFramework:
         strategy_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(strategy_module)
         return strategy_module
+
+    def _dispatch_gui_call(self, method_name: str, *args, **kwargs):
+        """在GUI或无界面环境下安全地调用GUI方法"""
+        if not self.trader_callback:
+            return
+
+        callback_method = getattr(self.trader_callback, method_name, None)
+        if callable(callback_method):
+            callback_method(*args, **kwargs)
+            return
+
+        gui = getattr(self.trader_callback, "gui", None)
+        if not gui:
+            return
+
+        target = getattr(gui, method_name, None)
+        if callable(target):
+            target(*args, **kwargs)
         
     def init_trader_and_account(self):
         """初始化交易接口和账户"""
@@ -832,10 +860,14 @@ class KhQuantFramework:
             self._cached_benchmark_close = {}
             
             # 直接从设置界面读取是否初始化数据的配置
-            from PyQt5.QtCore import QSettings
-            settings = QSettings('KHQuant', 'StockAnalyzer')
-            init_data_enabled = settings.value('init_data_enabled', True, type=bool)
-            
+            try:
+                from PyQt5.QtCore import QSettings
+
+                settings = QSettings('KHQuant', 'StockAnalyzer')
+                init_data_enabled = settings.value('init_data_enabled', True, type=bool)
+            except Exception:
+                init_data_enabled = True
+
             if self.trader_callback:
                 self.trader_callback.gui.log_message(f"数据初始化设置: {'启用' if init_data_enabled else '禁用'}", "INFO")
             
@@ -1030,8 +1062,14 @@ class KhQuantFramework:
 
 是否继续运行回测？"""
 
-                # 使用QMetaObject.invokeMethod在主线程中显示弹窗
-                if self.trader_callback and hasattr(self.trader_callback, 'gui'):
+                # headless模式下跳过弹窗交互，直接记录警告
+                if self.headless:
+                    logging.warning(
+                        "数据周期(%s)与触发类型(%s)不匹配，已在无界面模式下继续运行",
+                        data_period,
+                        trigger_type,
+                    )
+                elif self.trader_callback and hasattr(self.trader_callback, 'gui'):
                     # 创建一个标志变量来存储用户选择
                     user_choice = [None]  # 使用列表以便在lambda中修改
                     
@@ -1961,12 +1999,15 @@ class KhQuantFramework:
                 
                 # 然后再显示回测结果
                 self.trader_callback.gui.log_message("回测完成", "INFO")
-                QMetaObject.invokeMethod(
-                    self.trader_callback.gui, 
-                    "show_backtest_result", 
-                    Qt.QueuedConnection,
-                    Q_ARG(str, backtest_dir)
-                )
+                if self.headless:
+                    self._dispatch_gui_call("show_backtest_result", backtest_dir)
+                else:
+                    QMetaObject.invokeMethod(
+                        self.trader_callback.gui,
+                        "show_backtest_result",
+                        Qt.QueuedConnection,
+                        Q_ARG(str, backtest_dir)
+                    )
                 
             # 在回测完成后保存回测记录
             try:
