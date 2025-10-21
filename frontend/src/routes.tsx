@@ -6,11 +6,11 @@ const TaskBoardPage = lazy(() => import('./pages/TaskBoardPage'));
 const BacktestConfigPage = lazy(() => import('./pages/BacktestConfigPage'));
 const ResultsDashboardPage = lazy(() => import('./pages/ResultsDashboardPage'));
 
-interface AppRoute extends RouteObject {
+type AppRoute = RouteObject & {
   path: string;
   protected?: boolean;
   element: JSX.Element;
-}
+};
 
 const routes: AppRoute[] = [
   {

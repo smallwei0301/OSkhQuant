@@ -6,9 +6,11 @@ import type { ResultsResponse } from '../types/results';
 
 export function useDownloadData() {
   const api = useApi();
-  return useMutation(async (payload: Record<string, unknown>) => {
-    const { data } = await api.post<{ taskId: string }>('/data/download', payload);
-    return data;
+  return useMutation<{ taskId: string }, unknown, Record<string, unknown>>({
+    mutationFn: async (payload) => {
+      const { data } = await api.post<{ taskId: string }>('/data/download', payload);
+      return data;
+    }
   });
 }
 
@@ -17,7 +19,7 @@ export function useTaskDetails(taskId: string) {
   return useQuery<TaskStatus>({
     queryKey: ['task', taskId],
     queryFn: async () => {
-      const { data } = await api.get(`/tasks/${taskId}`);
+      const { data } = await api.get<TaskStatus>(`/tasks/${taskId}`);
       return data;
     },
     enabled: Boolean(taskId)
@@ -26,22 +28,24 @@ export function useTaskDetails(taskId: string) {
 
 export function useBacktestRun() {
   const api = useApi();
-  return useMutation(async (values: BacktestFormValues) => {
-    const formData = new FormData();
-    formData.append('strategyName', values.strategyName);
-    formData.append('symbolList', JSON.stringify(values.symbolList));
-    formData.append('startDate', values.startDate);
-    formData.append('endDate', values.endDate);
-    formData.append('positionSizing', values.positionSizing);
-    formData.append('slippage', values.slippage.toString());
-    formData.append('commission', values.commission.toString());
-    formData.append('rsi', JSON.stringify(values.rsi));
-    formData.append('capital', JSON.stringify(values.capital));
-    values.files.forEach((file) => formData.append('files', file));
-    const { data } = await api.post<BacktestResponse>('/backtest/run', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    return data;
+  return useMutation<BacktestResponse, unknown, BacktestFormValues>({
+    mutationFn: async (values) => {
+      const formData = new FormData();
+      formData.append('strategyName', values.strategyName);
+      formData.append('symbolList', JSON.stringify(values.symbolList));
+      formData.append('startDate', values.startDate);
+      formData.append('endDate', values.endDate);
+      formData.append('positionSizing', values.positionSizing);
+      formData.append('slippage', values.slippage.toString());
+      formData.append('commission', values.commission.toString());
+      formData.append('rsi', JSON.stringify(values.rsi));
+      formData.append('capital', JSON.stringify(values.capital));
+      values.files.forEach((file) => formData.append('files', file));
+      const { data } = await api.post<BacktestResponse>('/backtest/run', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return data;
+    }
   });
 }
 
@@ -50,7 +54,7 @@ export function useBacktestResults(taskId: string) {
   return useQuery<ResultsResponse>({
     queryKey: ['results', taskId],
     queryFn: async () => {
-      const { data } = await api.get(`/backtest/results/${taskId}`);
+      const { data } = await api.get<ResultsResponse>(`/backtest/results/${taskId}`);
       return data;
     },
     enabled: Boolean(taskId)

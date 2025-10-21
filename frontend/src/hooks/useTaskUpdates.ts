@@ -11,7 +11,7 @@ export function useTaskUpdates({ pollingInterval = 5000, taskIds }: UseTaskUpdat
   const api = useApi();
   const [tasks, setTasks] = useState<Record<string, TaskStatus>>({});
   const wsRef = useRef<WebSocket | null>(null);
-  const wsUrl = import.meta.env.VITE_WS_BASE_URL as string | undefined;
+  const wsUrl = import.meta.env.VITE_WS_BASE_URL;
 
   useEffect(() => {
     let isMounted = true;
