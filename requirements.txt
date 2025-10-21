@@ -1,5 +1,4 @@
-# GUI 相關套件
-PyQt5==5.15.11
+# GUI 相關套件（Netlify 等無法提供桌面組件的環境請改用 requirements-gui.txt）
 
 # 數據處理
 pandas==2.3.1
