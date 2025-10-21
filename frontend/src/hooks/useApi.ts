@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosHeaders } from 'axios';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useMemo } from 'react';
 
@@ -19,10 +19,14 @@ export function useApi() {
 
     client.interceptors.request.use(async (config) => {
       const token = await getAccessTokenSilently();
-      config.headers = {
-        ...config.headers,
-        Authorization: `Bearer ${token}`
-      };
+      if (token) {
+        const headers =
+          config.headers instanceof AxiosHeaders
+            ? config.headers
+            : new AxiosHeaders(config.headers);
+        headers.set('Authorization', `Bearer ${token}`);
+        config.headers = headers;
+      }
       return config;
     });
 

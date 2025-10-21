@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Form, Input, InputNumber, DatePicker, Select, Radio, Upload, Button, message, Space, Card } from 'antd';
-import type { UploadFile } from 'antd/es/upload/interface';
+import type { RcFile, UploadChangeParam, UploadFile } from 'antd/es/upload/interface';
 import dayjs from 'dayjs';
+import type { Dayjs } from 'dayjs';
 import { InboxOutlined } from '@ant-design/icons';
 import type { BacktestFormValues } from '../types/backtest';
 import { useBacktestRun } from '../services/api';
@@ -9,13 +10,17 @@ import { DEFAULT_RSI_SETTINGS } from '../config/defaults';
 
 const { RangePicker } = DatePicker;
 
+type BacktestFormFields = Omit<BacktestFormValues, 'files'> & {
+  dateRange?: [Dayjs, Dayjs];
+};
+
 function BacktestConfigForm() {
-  const [form] = Form.useForm<BacktestFormValues>();
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [form] = Form.useForm<BacktestFormFields>();
+  const [fileList, setFileList] = useState<UploadFile<RcFile>[]>([]);
   const backtestMutation = useBacktestRun();
   const [taskId, setTaskId] = useState<string | null>(null);
 
-  const handleUploadChange = ({ fileList: newList }: { fileList: UploadFile[] }) => {
+  const handleUploadChange = ({ fileList: newList }: UploadChangeParam<UploadFile<RcFile>>) => {
     const accepted = newList.filter((file) =>
       ['application/x-python-code', 'text/x-python', 'text/plain'].includes(file.type || '') ||
       file.name.endsWith('.py') ||
@@ -27,11 +32,9 @@ function BacktestConfigForm() {
     setFileList(accepted);
   };
 
-  const onFinish = async (values: BacktestFormValues) => {
+  const onFinish = async (values: BacktestFormFields) => {
     try {
-      const files = fileList
-        .map((file) => file.originFileObj)
-        .filter((file): file is File => Boolean(file));
+      const files = fileList.flatMap<RcFile>((file) => (file.originFileObj ? [file.originFileObj] : []));
       if (!files.length) {
         message.warning('請上傳至少一個策略檔案');
         return;
@@ -42,10 +45,15 @@ function BacktestConfigForm() {
         return;
       }
       const payload: BacktestFormValues = {
-        ...values,
+        strategyName: values.strategyName,
+        rsi: values.rsi,
+        capital: values.capital,
         symbolList: symbols,
         startDate: values.startDate,
         endDate: values.endDate,
+        positionSizing: values.positionSizing,
+        slippage: values.slippage,
+        commission: values.commission,
         files
       };
       const data = await backtestMutation.mutateAsync(payload);
