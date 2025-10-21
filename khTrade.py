@@ -1,5 +1,5 @@
 # coding: utf-8
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import datetime
 from types import SimpleNamespace
 
@@ -13,9 +13,16 @@ class KhTradeManager:
         self.config = config
         self.callback = callback  # 保存回调对象
         self.orders = {}  # 订单管理
-        self.assets = {}  # 资产管理
+        initial_cash = float(getattr(self.config, "initial_cash", 0.0))
+        self.assets = {
+            "cash": initial_cash,
+            "frozen_cash": 0.0,
+            "market_value": 0.0,
+            "total_asset": initial_cash,
+        }
         self.trades = {}  # 成交管理
         self.positions = {}  # 持仓管理
+        self.cost_records: List[Dict] = []  # 成本纪录
         
         # 获取交易成本配置
         trade_cost = self.config.config_dict.get("backtest", {}).get("trade_cost", {})
@@ -195,7 +202,7 @@ class KhTradeManager:
                 if self.callback:
                     self.callback.gui.log_message(error_msg, "WARNING")
                 continue
-                
+
             # 计算交易成本
             direction = "buy" if signal["action"].lower() == "buy" else "sell"
             actual_price, trade_cost = self.calculate_trade_cost(
@@ -204,11 +211,35 @@ class KhTradeManager:
                 direction,
                 signal["code"]
             )
-            
+
             # 添加交易成本信息
             signal["trade_cost"] = trade_cost
             signal["actual_price"] = actual_price
-            
+            commission = self.calculate_commission(actual_price, signal["volume"])
+            stamp_tax = self.calculate_stamp_tax(actual_price, signal["volume"], direction)
+            transfer_fee = self.calculate_transfer_fee(signal["code"], actual_price, signal["volume"])
+            flow_fee = self.calculate_flow_fee()
+            cost_breakdown = {
+                "total": trade_cost,
+                "commission": commission,
+                "stamp_tax": stamp_tax,
+                "transfer_fee": transfer_fee,
+                "flow_fee": flow_fee,
+            }
+            signal["cost_breakdown"] = cost_breakdown
+            self.cost_records.append(
+                {
+                    "code": signal["code"],
+                    "action": direction,
+                    "price": actual_price,
+                    "volume": signal["volume"],
+                    "timestamp": signal.get("timestamp", int(datetime.datetime.now().timestamp())),
+                    "trade_cost": trade_cost,
+                    "cost_breakdown": cost_breakdown,
+                    "reason": signal.get("reason", ""),
+                }
+            )
+
             # 执行下单
             self.place_order(signal)
             
@@ -246,12 +277,22 @@ class KhTradeManager:
             order_id = len(self.orders) + 1
             
             # -- 提前计算交易成本和实际价格 --
-            actual_price, trade_cost = self.calculate_trade_cost(
-                signal["price"],
-                signal["volume"],
-                signal["action"],
-                signal["code"]
-            )
+            actual_price = signal.get("actual_price")
+            trade_cost = signal.get("trade_cost")
+            if actual_price is None or trade_cost is None:
+                actual_price, trade_cost = self.calculate_trade_cost(
+                    signal["price"],
+                    signal["volume"],
+                    signal["action"],
+                    signal["code"]
+                )
+            cost_breakdown = signal.get("cost_breakdown") or {
+                "total": trade_cost,
+                "commission": self.calculate_commission(actual_price, signal["volume"]),
+                "stamp_tax": self.calculate_stamp_tax(actual_price, signal["volume"], signal["action"]),
+                "transfer_fee": self.calculate_transfer_fee(signal["code"], actual_price, signal["volume"]),
+                "flow_fee": self.calculate_flow_fee(),
+            }
             
             # 计算买入所需的总资金（包括交易成本）
             if signal["action"] == "buy":
@@ -259,7 +300,7 @@ class KhTradeManager:
             
             # 买入时检查资金是否足够 (使用所需总资金进行检查)
             if signal["action"] == "buy":
-                if self.assets["cash"] < required_cash: # 使用 required_cash 进行比较
+                if self.assets.get("cash", 0.0) < required_cash: # 使用 required_cash 进行比较
                     error_msg = (
                         f"资金不足 - "
                         f"所需资金: {required_cash:.2f} (含成本:{trade_cost:.2f}) | " # 显示包含成本的所需资金
@@ -340,7 +381,9 @@ class KhTradeManager:
                 "strategy_name": order["strategy_name"],
                 "order_remark": order["order_remark"],
                 "direction": order["direction"],
-                "offset_flag": order["offset_flag"]
+                "offset_flag": order["offset_flag"],
+                "trade_cost": trade_cost,
+                "cost_breakdown": cost_breakdown,
             }
             
             # 更新成交字典
@@ -349,7 +392,7 @@ class KhTradeManager:
             # 更新资产
             if signal["action"] == "buy":
                 # 买入：减少现金 (减少的是 required_cash，包含了成本)
-                self.assets["cash"] -= required_cash
+                self.assets["cash"] = self.assets.get("cash", 0.0) - required_cash
                 # 注意：回测中冻结资金和在途资金通常不模拟，简化处理
                 # self.assets["frozen_cash"] += actual_price * signal["volume"]
                 # self.assets["market_value"] += actual_price * signal["volume"] # 市值更新在record_results中处理
@@ -393,7 +436,7 @@ class KhTradeManager:
             else:  # sell
                 # 卖出：增加现金 (增加的是成交金额减去交易成本)
                 cash_increase = actual_price * signal["volume"] - trade_cost
-                self.assets["cash"] += cash_increase
+                self.assets["cash"] = self.assets.get("cash", 0.0) + cash_increase
                 # self.assets["market_value"] -= actual_price * signal["volume"] # 市值更新在record_results中处理
                 
                 # 更新持仓
@@ -428,11 +471,6 @@ class KhTradeManager:
             
             # 输出交易成本信息到GUI日志
             if self.callback:
-                commission = self.calculate_commission(actual_price, signal["volume"])
-                stamp_tax = self.calculate_stamp_tax(actual_price, signal["volume"], signal["action"])
-                transfer_fee = self.calculate_transfer_fee(signal["code"], actual_price, signal["volume"])
-                flow_fee = self.calculate_flow_fee()
-                
                 cost_msg = (
                     f"交易成本 - "
                     f"股票代码: {signal['code']} | "
@@ -440,10 +478,10 @@ class KhTradeManager:
                     f"成交数量: {signal['volume']} | "
                     f"成交价格: {actual_price:.2f} | "
                     f"交易金额: {actual_price * signal['volume']:.2f} | "
-                    f"佣金: {commission:.2f} | "
-                    f"印花税: {stamp_tax:.2f} | "
-                    f"过户费: {transfer_fee:.2f} | "
-                    f"流量费: {flow_fee:.2f} | "
+                    f"佣金: {cost_breakdown['commission']:.2f} | "
+                    f"印花税: {cost_breakdown['stamp_tax']:.2f} | "
+                    f"过户费: {cost_breakdown['transfer_fee']:.2f} | "
+                    f"流量费: {cost_breakdown['flow_fee']:.2f} | "
                     f"总成本: {trade_cost:.2f}"
                 )
                 self.callback.gui.log_message(cost_msg, "TRADE")
@@ -471,6 +509,90 @@ class KhTradeManager:
                     order_remark=signal.get("remark", "")
                 ))
         
+    def generate_report(self) -> Dict[str, Any]:
+        """整理回测期间的成本与绩效指标。"""
+        trade_count = len(self.cost_records)
+        total_cost = sum(record["cost_breakdown"].get("total", 0.0) for record in self.cost_records)
+        total_commission = sum(record["cost_breakdown"].get("commission", 0.0) for record in self.cost_records)
+        total_stamp_tax = sum(record["cost_breakdown"].get("stamp_tax", 0.0) for record in self.cost_records)
+        total_transfer_fee = sum(record["cost_breakdown"].get("transfer_fee", 0.0) for record in self.cost_records)
+        total_flow_fee = sum(record["cost_breakdown"].get("flow_fee", 0.0) for record in self.cost_records)
+        turnover = sum(record["price"] * record["volume"] for record in self.cost_records)
+
+        buy_trades = sum(1 for record in self.cost_records if record["action"] == "buy")
+        sell_trades = sum(1 for record in self.cost_records if record["action"] == "sell")
+
+        market_value = 0.0
+        positions_report = []
+        for code, pos in self.positions.items():
+            current_price = pos.get("current_price", 0.0)
+            volume = pos.get("volume", 0)
+            market_val = pos.get("market_value")
+            if market_val is None:
+                market_val = round(current_price * volume, 2)
+            market_value += market_val
+            positions_report.append(
+                {
+                    "code": code,
+                    "volume": volume,
+                    "can_use_volume": pos.get("can_use_volume", 0),
+                    "avg_price": pos.get("avg_price", 0.0),
+                    "current_price": current_price,
+                    "market_value": market_val,
+                }
+            )
+
+        cash_balance = float(self.assets.get("cash", 0.0))
+        self.assets["market_value"] = market_value
+        total_asset = cash_balance + market_value
+        self.assets["total_asset"] = total_asset
+
+        initial_cash = float(getattr(self.config, "initial_cash", cash_balance))
+        pnl = total_asset - initial_cash
+        return_rate = pnl / initial_cash if initial_cash else 0.0
+
+        cost_summary = {
+            "total_cost": round(total_cost, 2),
+            "commission": round(total_commission, 2),
+            "stamp_tax": round(total_stamp_tax, 2),
+            "transfer_fee": round(total_transfer_fee, 2),
+            "flow_fee": round(total_flow_fee, 2),
+            "turnover": round(turnover, 2),
+            "average_cost_per_trade": round(total_cost / trade_count, 4) if trade_count else 0.0,
+            "net_cost_ratio": round(total_cost / turnover, 6) if turnover else 0.0,
+        }
+
+        performance_summary = {
+            "initial_cash": round(initial_cash, 2),
+            "cash_balance": round(cash_balance, 2),
+            "market_value": round(market_value, 2),
+            "total_asset": round(total_asset, 2),
+            "pnl": round(pnl, 2),
+            "return_rate": round(return_rate, 6),
+            "open_position_count": len(self.positions),
+        }
+
+        trade_summary = {
+            "total_trades": trade_count,
+            "buy_trades": buy_trades,
+            "sell_trades": sell_trades,
+        }
+
+        report = {
+            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "cost_summary": cost_summary,
+            "performance_summary": performance_summary,
+            "trade_summary": trade_summary,
+            "trades": self.cost_records,
+            "orders": list(self.orders.values()),
+            "executions": list(self.trades.values()),
+            "positions": positions_report,
+            "assets": self.assets.copy(),
+        }
+
+        return report
+
+
     def update_dic(self, signal: Dict):
         """更新数据字典"""
         # 更新资产、委托、成交和持仓数据字典

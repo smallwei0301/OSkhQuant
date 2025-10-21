@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -15,10 +16,18 @@ from fastapi.encoders import jsonable_encoder
 
 from .auth import secured_dependency
 from .backtest import BacktestTaskManager
+from .celery_app import celery_app
+from .db import get_session, init_database
+from .history import fetch_history_data
+from .repositories import get_backtest_report
+from .scheduler import task_scheduler
 from .schemas import (
+    BacktestReportResponse,
     BacktestRunRequest,
     BacktestTaskStatus,
     DataDownloadRequest,
+    DataHistoryRequest,
+    DataHistoryResponse,
     KhFrameTaskRequest,
     ScheduleJobRequest,
     ScheduleJobResponse,
@@ -26,18 +35,13 @@ from .schemas import (
     TaskLogEntry,
     TaskStatusResponse,
     TaskSubmissionResponse,
-    DataHistoryRequest,
-    DataHistoryResponse,
     TradeCostRequest,
     TradeCostResponse,
     TradeSignalRequest,
     TradeSignalResponse,
 )
-from .trade import calculate_trade_cost_api, generate_trade_signal_api
-from .history import fetch_history_data
-from .celery_app import celery_app
-from .scheduler import task_scheduler
 from .tasks import download_data_task, khframe_pipeline_task, supplement_history_task
+from .trade import calculate_trade_cost_api, generate_trade_signal_api
 
 API_VERSION = "api_v20240518_03"
 LOGGER = logging.getLogger("lazybacktest.api")
@@ -66,6 +70,25 @@ def _configure_cors(application: FastAPI) -> None:
 
 _configure_cors(app)
 _task_manager = BacktestTaskManager()
+
+
+def _ensure_cleanup_schedule() -> None:
+    flag = os.getenv("ENABLE_AUTO_CLEANUP", "true").lower()
+    if flag not in {"1", "true", "yes"}:
+        return
+    cron_expression = os.getenv("CLEANUP_CRON", "0 3 * * *")
+    retention = int(os.getenv("TASK_RETENTION_DAYS", "7"))
+    request = ScheduleJobRequest(
+        job_id="system.cleanup",
+        cron=cron_expression,
+        task_name="lazybacktest.maintenance.cleanup",
+        args=[],
+        kwargs={"retention_days": retention},
+    )
+    try:
+        task_scheduler.add_or_update_job(request)
+    except Exception:  # pylint: disable=broad-except
+        LOGGER.exception("Failed to register cleanup schedule")
 
 
 @app.get("/health", summary="健康檢查")
@@ -131,6 +154,37 @@ def get_backtest_status(task_id: str) -> BacktestTaskStatus:
         return _task_manager.get(task_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到對應任務") from exc
+
+
+@app.get(
+    "/reports/{backtest_id}",
+    response_model=BacktestReportResponse,
+    dependencies=[Depends(secured_dependency)],
+    summary="取得回測報告",
+)
+def get_backtest_report_endpoint(backtest_id: str) -> BacktestReportResponse:
+    try:
+        record_id = uuid.UUID(backtest_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="backtest_id 格式錯誤") from exc
+
+    with get_session() as session:
+        record = get_backtest_report(session, record_id)
+        if record is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到回測紀錄")
+
+        trade_summary = record.report_payload.get("trade_summary") if record.report_payload else {}
+        return BacktestReportResponse(
+            backtest_id=str(record.id),
+            status=record.status,
+            result_path=record.result_path,
+            cost_summary=record.cost_summary or {},
+            performance_summary=record.performance_summary or {},
+            trade_summary=trade_summary or {},
+            report=record.report_payload or {},
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+        )
 
 
 @app.post(
@@ -240,7 +294,9 @@ async def global_exception_handler(exc: Exception) -> JSONResponse:
 
 @app.on_event("startup")
 async def _on_startup() -> None:
+    init_database()
     await task_scheduler.start()
+    _ensure_cleanup_schedule()
 
 
 @app.on_event("shutdown")
